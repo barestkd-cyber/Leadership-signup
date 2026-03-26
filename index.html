@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BaresTKD Leadership Sign-Up</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --black: #0d0d0d; --red: #c8102e; --red-dark: #9e0c24;
+    --gold: #d4a017; --white: #f5f0e8; --gray: #2a2a2a;
+    --gray2: #1a1a1a; --text-muted: #888;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--black); color: var(--white); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
+
+  header { background: var(--black); border-bottom: 3px solid var(--red); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 1.9rem; letter-spacing: 3px; line-height: 1; }
+  .logo span { color: var(--red); }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .hdr-btn { background: none; border: 1px solid #555; color: var(--text-muted); padding: 4px 11px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-family: 'DM Sans', sans-serif; transition: all 0.2s; }
+  .hdr-btn:hover { border-color: var(--red); color: var(--white); }
+  .hdr-btn.active { background: var(--red); border-color: var(--red); color: white; }
+
+  /* SYNC STATUS */
+  .sync-bar { background: var(--gray2); border-bottom: 1px solid #222; padding: 5px 24px; display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-muted); }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #444; flex-shrink: 0; transition: background 0.3s; }
+  .sync-dot.syncing { background: var(--gold); animation: pulse 1s infinite; }
+  .sync-dot.synced  { background: #4caf50; }
+  .sync-dot.error   { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .tabs-wrapper { background: var(--gray2); border-bottom: 1px solid #2a2a2a; overflow-x: auto; white-space: nowrap; }
+  .tabs { display: inline-flex; padding: 0 12px; }
+  .tab { display: inline-block; padding: 11px 18px; cursor: pointer; font-size: 0.75rem; font-family: 'DM Sans', sans-serif; color: var(--text-muted); border-bottom: 3px solid transparent; transition: all 0.2s; white-space: nowrap; user-select: none; }
+  .tab:hover { color: var(--white); }
+  .tab.active { color: var(--gold); border-bottom-color: var(--gold); font-weight: 600; }
+  .tab .tab-top { font-family: 'Bebas Neue', sans-serif; font-size: 0.95rem; letter-spacing: 2px; display: block; }
+  .tab .tab-sub { font-size: 0.65rem; opacity: 0.75; }
+  .tab.active .tab-sub { opacity: 1; }
+  .tab.archive-tab { border-left: 1px solid #333; margin-left: 8px; padding-left: 20px; }
+  .tab.archive-tab .tab-top { color: #666; }
+  .tab.archive-tab.active .tab-top { color: var(--gold); }
+  .current-pill { display: inline-block; background: rgba(200,16,46,0.15); color: #ff6b7a; border: 1px solid rgba(200,16,46,0.3); font-size: 0.58rem; padding: 1px 5px; border-radius: 10px; margin-left: 5px; vertical-align: middle; font-family: 'DM Sans', sans-serif; }
+
+  main { max-width: 920px; margin: 0 auto; padding: 28px 16px 60px; }
+  .week-panel { display: none; }
+  .week-panel.active { display: block; }
+
+  /* LOADING OVERLAY */
+  .loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 300; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+  .loading-overlay.hidden { display: none; }
+  .spinner { width: 36px; height: 36px; border: 3px solid #333; border-top-color: var(--red); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 0.82rem; color: var(--text-muted); }
+
+  .summary-bar { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+  .summary-stat { background: var(--gray); border: 1px solid #333; border-radius: 6px; padding: 10px 16px; text-align: center; flex: 1; min-width: 80px; }
+  .summary-stat .num { font-family: 'Bebas Neue', sans-serif; font-size: 1.9rem; color: var(--red); line-height: 1; }
+  .summary-stat .lbl { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
+  .admin-panel { display: none; background: var(--gray); border: 1px solid #444; border-left: 3px solid var(--gold); border-radius: 8px; padding: 18px; margin-bottom: 24px; }
+  .admin-panel.visible { display: block; }
+  .admin-panel h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; font-size: 1rem; color: var(--gold); margin-bottom: 12px; }
+  .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 520px) { .admin-grid { grid-template-columns: 1fr; } }
+  .admin-class-row { background: var(--black); border: 1px solid #2a2a2a; border-radius: 6px; padding: 9px 13px; }
+  .admin-class-row strong { display: block; margin-bottom: 5px; color: var(--white); font-size: 0.82rem; }
+  .admin-class-row .admin-spots { color: var(--text-muted); font-size: 0.73rem; margin-bottom: 1px; }
+
+  .day-group { margin-bottom: 36px; }
+  .day-header { font-family: 'Bebas Neue', sans-serif; font-size: 1.3rem; letter-spacing: 4px; color: var(--gold); margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #2a2a2a; }
+
+  .class-card { background: var(--gray); border: 1px solid #333; border-radius: 8px; margin-bottom: 10px; overflow: hidden; transition: border-color 0.2s; }
+  .class-card:hover { border-color: #4a4a4a; }
+  .class-header { display: flex; align-items: center; padding: 13px 16px; cursor: pointer; user-select: none; gap: 10px; }
+  .class-info { flex: 1; }
+  .class-name { font-size: 0.97rem; font-weight: 600; }
+  .class-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+  .badge { font-size: 0.68rem; padding: 3px 8px; border-radius: 20px; font-weight: 500; white-space: nowrap; }
+  .badge-open    { background: rgba(200,16,46,0.15); color: #ff6b7a; border: 1px solid rgba(200,16,46,0.3); }
+  .badge-full    { background: rgba(50,50,50,0.6);   color: var(--text-muted); border: 1px solid #444; }
+  .badge-partial { background: rgba(212,160,23,0.15);color: var(--gold); border: 1px solid rgba(212,160,23,0.3); }
+  .chevron { color: var(--text-muted); font-size: 0.75rem; transition: transform 0.2s; flex-shrink: 0; }
+  .class-card.open .chevron { transform: rotate(180deg); }
+  .class-body { display: none; padding: 14px 16px 16px; border-top: 1px solid #2a2a2a; }
+  .class-card.open .class-body { display: block; }
+
+  .slot-section { margin-bottom: 16px; }
+  .slot-section:last-child { margin-bottom: 0; }
+  .slot-label { font-size: 0.67rem; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 7px; }
+  .slot-row { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 6px; }
+  .slot-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+  .slot-dot.filled { background: var(--red); }
+  .slot-dot.empty  { background: #3a3a3a; border: 1px solid #555; }
+  .slot-info { flex: 1; }
+  .slot-name   { font-size: 0.86rem; color: var(--white); font-weight: 500; }
+  .slot-detail { font-size: 0.72rem; color: var(--text-muted); margin-top: 1px; }
+  .slot-empty-text { font-size: 0.82rem; color: #4a4a4a; font-style: italic; margin-top: 3px; }
+
+  .signup-btn { display: inline-flex; align-items: center; gap: 5px; background: var(--red); color: white; border: none; padding: 7px 14px; border-radius: 5px; font-family: 'DM Sans', sans-serif; font-size: 0.8rem; font-weight: 600; cursor: pointer; margin-top: 6px; transition: background 0.15s; }
+  .signup-btn:hover { background: var(--red-dark); }
+  .signup-btn:disabled { background: #444; cursor: not-allowed; }
+
+  .remove-btn { background: none; border: 1px solid #4a4a4a; color: var(--text-muted); padding: 2px 7px; border-radius: 4px; font-size: 0.7rem; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; margin-top: 3px; }
+  .remove-btn:hover { border-color: var(--red); color: #ff6b7a; }
+
+  /* ADMIN LOGIN */
+  .admin-login-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.88); z-index: 250; align-items: center; justify-content: center; padding: 16px; }
+  .admin-login-modal.active { display: flex; }
+  .admin-login-box { background: var(--gray); border: 1px solid #444; border-top: 3px solid var(--gold); border-radius: 10px; padding: 26px 22px; width: 100%; max-width: 340px; }
+  .admin-login-box h2 { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; letter-spacing: 2px; margin-bottom: 16px; color: var(--gold); }
+  .admin-login-box input { width: 100%; background: var(--black); border: 1px solid #444; color: var(--white); padding: 9px 11px; border-radius: 5px; font-family: 'DM Sans', sans-serif; font-size: 0.88rem; outline: none; margin-bottom: 10px; }
+  .admin-login-box input:focus { border-color: var(--gold); }
+  .admin-err { font-size: 0.75rem; color: #ff6b7a; margin-bottom: 8px; display: none; }
+  .admin-login-actions { display: flex; gap: 10px; }
+  .btn-gold { flex: 1; background: var(--gold); color: var(--black); border: none; padding: 10px; border-radius: 5px; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+  .btn-ghost { flex: 1; background: none; color: var(--text-muted); border: 1px solid #444; padding: 10px; border-radius: 5px; font-family: 'DM Sans', sans-serif; font-size: 0.88rem; cursor: pointer; }
+  .btn-ghost:hover { border-color: #666; color: var(--white); }
+
+  /* SIGNUP MODAL */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.88); z-index: 200; align-items: center; justify-content: center; padding: 16px; }
+  .modal-overlay.active { display: flex; }
+  .modal { background: var(--gray); border: 1px solid #444; border-top: 3px solid var(--red); border-radius: 10px; padding: 26px 22px; width: 100%; max-width: 420px; animation: slideUp 0.2s ease; }
+  @keyframes slideUp { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .modal h2 { font-family: 'Bebas Neue', sans-serif; font-size: 1.55rem; letter-spacing: 2px; margin-bottom: 4px; }
+  .modal-sub { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.6; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group.no-mb { margin-bottom: 0; }
+  .form-group label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted); margin-bottom: 5px; }
+  .form-group input, .form-group select { width: 100%; background: var(--black); border: 1px solid #444; color: var(--white); padding: 9px 11px; border-radius: 5px; font-family: 'DM Sans', sans-serif; font-size: 0.88rem; outline: none; transition: border-color 0.15s; }
+  .form-group input:focus, .form-group select:focus { border-color: var(--red); }
+  .form-group select option { background: var(--gray); }
+  .form-group input.error, .form-group select.error { border-color: var(--red) !important; }
+  .field-note { font-size: 0.68rem; color: var(--text-muted); margin-top: 4px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .btn-confirm { flex: 1; background: var(--red); color: white; border: none; padding: 10px; border-radius: 5px; font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: background 0.15s; }
+  .btn-confirm:hover { background: var(--red-dark); }
+  .btn-confirm:disabled { background: #444; cursor: not-allowed; }
+  .btn-cancel { flex: 1; background: none; color: var(--text-muted); border: 1px solid #444; padding: 10px; border-radius: 5px; font-family: 'DM Sans', sans-serif; font-size: 0.88rem; cursor: pointer; }
+  .btn-cancel:hover { border-color: #666; color: var(--white); }
+
+  /* ARCHIVE */
+  .archive-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+  .archive-empty .big { font-family: 'Bebas Neue', sans-serif; font-size: 2rem; letter-spacing: 3px; color: #333; display: block; margin-bottom: 8px; }
+  .archive-week-block { margin-bottom: 40px; }
+  .archive-week-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; letter-spacing: 3px; color: #555; margin-bottom: 12px; padding-bottom: 5px; border-bottom: 1px solid #222; display: flex; justify-content: space-between; align-items: center; }
+  .archive-week-title span { font-family: 'DM Sans', sans-serif; font-size: 0.7rem; color: #444; letter-spacing: 0; }
+  .archive-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .archive-table th { text-align: left; padding: 6px 10px; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 1.5px; color: #555; border-bottom: 1px solid #222; }
+  .archive-table td { padding: 7px 10px; border-bottom: 1px solid #1e1e1e; color: #aaa; vertical-align: top; }
+  .archive-table td:first-child { color: var(--white); font-weight: 500; }
+  .archive-table tr:last-child td { border-bottom: none; }
+  .archive-table .no-signups td { color: #444; font-style: italic; }
+  .email-cell { font-size: 0.7rem; color: #555; }
+  .hours-section { margin-bottom: 32px; }
+  .hours-title { font-family: 'Bebas Neue', sans-serif; font-size: 1rem; letter-spacing: 3px; color: var(--gold); margin-bottom: 10px; }
+  .hours-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+  .hours-card { background: var(--gray); border: 1px solid #333; border-radius: 6px; padding: 10px 14px; }
+  .hours-card .h-count { font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; color: var(--red); line-height: 1; }
+  .hours-card .h-name  { font-size: 0.85rem; font-weight: 600; color: var(--white); }
+  .hours-card .h-stats { font-size: 0.7rem; color: var(--text-muted); margin-top: 3px; }
+  .hours-card .h-email { font-size: 0.68rem; color: #555; margin-top: 2px; }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1e1e1e; border: 1px solid #444; border-radius: 8px; padding: 10px 20px; font-size: 0.82rem; color: var(--white); z-index: 400; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .toast.success { border-color: #4caf50; color: #4caf50; }
+  .toast.err     { border-color: var(--red); color: #ff6b7a; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">BaresTKD <span>Leadership</span></div>
+  <div class="header-right">
+    <button class="hdr-btn" id="adminToggle">⚙ Admin</button>
+    <button class="hdr-btn" id="exportBtn">↓ CSV</button>
+  </div>
+</header>
+
+<div class="sync-bar">
+  <div class="sync-dot" id="syncDot"></div>
+  <span id="syncLabel">Connecting...</span>
+</div>
+
+<div class="tabs-wrapper">
+  <div class="tabs" id="tabsContainer"></div>
+</div>
+
+<main id="mainContent"></main>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Loading roster...</div>
+</div>
+
+<!-- ADMIN LOGIN -->
+<div class="admin-login-modal" id="adminLoginModal">
+  <div class="admin-login-box">
+    <h2>Admin Access</h2>
+    <input type="password" id="adminPassInput" placeholder="Enter admin password">
+    <div class="admin-err" id="adminErr">Incorrect password</div>
+    <div class="admin-login-actions">
+      <button class="btn-ghost" id="adminLoginCancel">Cancel</button>
+      <button class="btn-gold" id="adminLoginConfirm">Enter →</button>
+    </div>
+  </div>
+</div>
+
+<!-- SIGNUP MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2>Claim Your Spot</h2>
+    <div class="modal-sub" id="modalSub"></div>
+    <div class="form-row">
+      <div class="form-group no-mb">
+        <label>First Name</label>
+        <input type="text" id="inputFirst" placeholder="First" autocomplete="given-name">
+      </div>
+      <div class="form-group no-mb">
+        <label>Last Name</label>
+        <input type="text" id="inputLast" placeholder="Last" autocomplete="family-name">
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:14px">
+      <label>Email Address</label>
+      <input type="email" id="inputEmail" placeholder="you@email.com" autocomplete="email">
+      <div class="field-note">For cross-reference only — not shown publicly</div>
+    </div>
+    <div class="form-group" id="levelGroup">
+      <label id="levelLabel">Leadership Level</label>
+      <select id="inputLevel"><option value="">Select...</option></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="modalCancel">Cancel</button>
+      <button class="btn-confirm" id="modalConfirm">Claim Spot →</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- CONFIRMATION MODAL -->
+<div class="modal-overlay" id="confirmOverlay">
+  <div class="modal" style="border-top-color: #4caf50; text-align: center;">
+    <div style="font-size: 2.5rem; margin-bottom: 12px;">✅</div>
+    <h2 style="color: #4caf50; margin-bottom: 8px;">You're Signed Up!</h2>
+    <div id="confirmDetails" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.7;"></div>
+    <div style="background: #1a1a1a; border: 1px solid #333; border-left: 3px solid var(--gold); border-radius: 6px; padding: 14px 16px; margin-bottom: 22px; text-align: left;">
+      <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 2px; color: var(--gold); margin-bottom: 6px;">Your Responsibility</div>
+      <div style="font-size: 0.82rem; color: #ccc; line-height: 1.6;">Add this to your calendar now. You are responsible for showing up on time. If your plans change, remove yourself from the roster as soon as possible so someone else can take your spot.</div>
+    </div>
+    <button class="btn-confirm" id="confirmClose" style="width: 100%; padding: 12px;">Got It 👊</button>
+  </div>
+</div>
+
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────
+// Set your admin password here
+const ADMIN_PASSWORD = 'sensei2024';
+
+const INSTRUCTOR_RANKS   = ["Instructor's Aid","Instructor Trainee","Assistant Instructor","Lead Instructor","Senior Lead Instructor"];
+const LEADERSHIP_LEVELS  = ["Leadership Level 1","Leadership Level 2","Leadership Level 3","Leadership Level 4","Leadership Level 5","Leadership Level 6","Leadership Level 7"];
+
+const WEEKLY_TEMPLATE = [
+  { day:"Monday",    time:"5:00 PM",  duration:"45 min", name:"Juniors – Green/Black",  desc:"Green through Black · Adult leaders only",  spots:[{label:"Instructor",count:1,type:"instructor"},{label:"Black Belt+ Leader",count:2,type:"leader"}] },
+  { day:"Tuesday",   time:"4:00 PM",  duration:"30 min", name:"Cubs",                   desc:"Little ones · All ranks welcome",            spots:[{label:"Instructor",count:2,type:"instructor"},{label:"Leader",count:3,type:"leader"}] },
+  { day:"Tuesday",   time:"4:30 PM",  duration:"45 min", name:"Juniors – White/Orange", desc:"White through Orange Belt Juniors",          spots:[{label:"Instructor",count:2,type:"instructor"},{label:"Green Belt+ Leader",count:3,type:"leader"}] },
+  { day:"Tuesday",   time:"6:15 PM",  duration:"45 min", name:"Juniors – Green/Black",  desc:"Green through Black Belt Juniors",           spots:[{label:"Instructor",count:2,type:"instructor"},{label:"Black Belt+ Leader",count:3,type:"leader"}] },
+  { day:"Wednesday", time:"4:15 PM",  duration:"30 min", name:"Juniors – Brown/Black",  desc:"Brown through Black Belt Juniors",           spots:[{label:"Instructor",count:1,type:"instructor"}] },
+  { day:"Wednesday", time:"4:45 PM",  duration:"45 min", name:"Juniors – White/Blue",   desc:"White through Blue Belt Juniors",            spots:[{label:"Instructor",count:2,type:"instructor"},{label:"Brown Belt+ Leader",count:5,type:"leader"}] },
+  { day:"Wednesday", time:"5:30 PM",  duration:"30 min", name:"Cubs",                   desc:"Little ones · All ranks welcome",            spots:[{label:"Instructor",count:1,type:"instructor"},{label:"Leader",count:4,type:"leader"}] },
+  { day:"Thursday",  time:"4:30 PM",  duration:"30 min", name:"Cubs",                   desc:"Little ones · All ranks welcome",            spots:[{label:"Instructor",count:2,type:"instructor"},{label:"Leader",count:3,type:"leader"}] },
+  { day:"Thursday",  time:"5:30 PM",  duration:"45 min", name:"Forms",                  desc:"Forms class – instructor led",               spots:[{label:"Instructor",count:2,type:"instructor"}] },
+  { day:"Saturday",  time:"9:30 AM",  duration:"30 min", name:"Cubs",                   desc:"Little ones · All ranks welcome",            spots:[{label:"Instructor",count:1,type:"instructor"},{label:"Leader",count:3,type:"leader"}] },
+  { day:"Saturday",  time:"10:00 AM", duration:"1 hr",   name:"Juniors – All Ranks",    desc:"All ranks mixed · Adult leaders only",       spots:[{label:"Instructor",count:2,type:"instructor"},{label:"Green Belt+ Adult Leader",count:3,type:"leader"}] },
+];
+
+// ─── WEEK HELPERS ────────────────────────────────────────────
+function getMonday(d) {
+  const date=new Date(d); date.setHours(0,0,0,0);
+  const day=date.getDay(); date.setDate(date.getDate()+(day===0?-6:1-day)); return date;
+}
+function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
+function fmtShort(d){return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
+function weekKey(monday){return monday.toISOString().slice(0,10);}
+
+const today=new Date();
+const thisMonday=getMonday(today);
+const ACTIVE_WEEKS=Array.from({length:4},(_,i)=>{
+  const start=addDays(thisMonday,i*7), end=addDays(start,5);
+  return{start,end,key:weekKey(start),label:`${fmtShort(start)} – ${fmtShort(end)}`,isCurrent:i===0};
+});
+
+
+// ─── SHARED STORAGE via Supabase ─────────────────────────────
+const SUPABASE_URL = 'https://akdncbzxiwvihfcyijvm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_uSGIk4_Tt1_BOmPBoC_U5A_Kp2032f5';
+const STORE_KEY    = 'martial_arts_roster_v1';
+
+async function loadFromCloud() {
+  try {
+    setSyncStatus('syncing','Syncing...');
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/roster?key=eq.${STORE_KEY}&select=value`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    if (!res.ok) throw new Error('Load failed');
+    const rows = await res.json();
+    setSyncStatus('synced','Synced ✓');
+    if (rows && rows.length > 0) return JSON.parse(rows[0].value);
+    return { signups:{}, archivedWeeks:[] };
+  } catch(e) {
+    setSyncStatus('error','Offline — changes saved locally');
+    return getLocalStore();
+  }
+}
+
+async function saveToCloud(store) {
+  saveLocal(store);
+  try {
+    setSyncStatus('syncing','Saving...');
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/roster`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify({ key: STORE_KEY, value: JSON.stringify(store), updated_at: new Date().toISOString() })
+    });
+    if (!res.ok) throw new Error('Save failed');
+    setSyncStatus('synced','Saved ✓');
+  } catch(e) {
+    setSyncStatus('error','Save failed — retrying...');
+    setTimeout(()=>saveToCloud(store), 3000);
+  }
+}
+
+// Local fallback
+const LOCAL_KEY = 'classRoster_local_v4';
+function getLocalStore(){
+  try{const s=localStorage.getItem(LOCAL_KEY);return s?JSON.parse(s):{signups:{},archivedWeeks:[]};}catch(e){return{signups:{},archivedWeeks:[]};}
+}
+function saveLocal(store){try{localStorage.setItem(LOCAL_KEY,JSON.stringify(store));}catch(e){}}
+
+function setSyncStatus(state, msg) {
+  const dot = document.getElementById('syncDot');
+  const lbl = document.getElementById('syncLabel');
+  dot.className = 'sync-dot ' + state;
+  lbl.textContent = msg;
+}
+
+// In-memory store — loaded from cloud on start
+let store = { signups:{}, archivedWeeks:[] };
+let isAdmin = false;
+let currentTab = 0;
+
+// ─── ARCHIVE OLD WEEKS ───────────────────────────────────────
+function archiveOldWeeks() {
+  const activeKeys=new Set(ACTIVE_WEEKS.map(w=>w.key));
+  Object.keys(store.signups).forEach(key=>{
+    if(!activeKeys.has(key)&&!store.archivedWeeks.some(aw=>aw.key===key)){
+      const monday=new Date(key), saturday=addDays(monday,5);
+      store.archivedWeeks.push({key,label:`${fmtShort(monday)} – ${fmtShort(saturday)}`,signups:store.signups[key]});
+    }
+  });
+  store.archivedWeeks.sort((a,b)=>new Date(b.key)-new Date(a.key));
+}
+
+function getSignups(wk,ci){
+  if(!store.signups[wk])store.signups[wk]={};
+  if(!store.signups[wk][ci])store.signups[wk][ci]=WEEKLY_TEMPLATE[ci].spots.map(()=>[]);
+  while(store.signups[wk][ci].length<WEEKLY_TEMPLATE[ci].spots.length)store.signups[wk][ci].push([]);
+  return store.signups[wk][ci];
+}
+
+// ─── TOAST ───────────────────────────────────────────────────
+function showToast(msg, type='') {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show '+(type||'');
+  setTimeout(()=>t.className='toast',2500);
+}
+
+// ─── ADMIN LOGIN ─────────────────────────────────────────────
+document.getElementById('adminToggle').onclick = () => {
+  if (isAdmin) { logoutAdmin(); return; }
+  document.getElementById('adminPassInput').value='';
+  document.getElementById('adminErr').style.display='none';
+  document.getElementById('adminLoginModal').classList.add('active');
+  setTimeout(()=>document.getElementById('adminPassInput').focus(),100);
+};
+document.getElementById('adminLoginCancel').onclick = ()=>document.getElementById('adminLoginModal').classList.remove('active');
+document.getElementById('adminLoginConfirm').onclick = tryAdminLogin;
+document.getElementById('adminPassInput').onkeydown = e=>{ if(e.key==='Enter') tryAdminLogin(); };
+
+function tryAdminLogin() {
+  const pw = document.getElementById('adminPassInput').value;
+  if (pw === ADMIN_PASSWORD) {
+    isAdmin=true;
+    document.getElementById('adminLoginModal').classList.remove('active');
+    document.getElementById('adminToggle').classList.add('active');
+    document.getElementById('adminToggle').textContent='⚙ Admin ✓';
+    showToast('Admin mode on','success');
+    ACTIVE_WEEKS.forEach((wk,wi)=>{
+      const ap=document.getElementById(`admin-${wk.key}`);
+      if(ap) ap.classList.toggle('visible',wi===currentTab);
+    });
+    ACTIVE_WEEKS.forEach(wk=>renderWeek(wk.key));
+  } else {
+    document.getElementById('adminErr').style.display='block';
+  }
+}
+
+function logoutAdmin() {
+  isAdmin=false;
+  document.getElementById('adminToggle').classList.remove('active');
+  document.getElementById('adminToggle').textContent='⚙ Admin';
+  document.querySelectorAll('.admin-panel').forEach(p=>p.classList.remove('visible'));
+  ACTIVE_WEEKS.forEach(wk=>renderWeek(wk.key));
+  showToast('Admin mode off');
+}
+
+// ─── MODAL ───────────────────────────────────────────────────
+let pendingSignup=null;
+
+function openModal(wkKey,ci,si){
+  const cls=WEEKLY_TEMPLATE[ci], spot=cls.spots[si];
+  const wk=ACTIVE_WEEKS.find(w=>w.key===wkKey);
+  pendingSignup={wkKey,ci,si};
+  document.getElementById('modalSub').innerHTML=
+    `<strong>Week of ${wk.label}</strong><br>${cls.day} · ${cls.time} · ${cls.name}<br><span style="color:var(--gold)">${spot.label}</span>`;
+  ['inputFirst','inputLast','inputEmail','inputLevel'].forEach(id=>{ document.getElementById(id).value=''; document.getElementById(id).classList.remove('error'); });
+  const isInstructor=spot.type==='instructor';
+  document.getElementById('levelLabel').textContent=isInstructor?'Instructor Rank':'Leadership Level';
+  const sel=document.getElementById('inputLevel');
+  sel.innerHTML=`<option value="">Select...</option>`;
+  (isInstructor?INSTRUCTOR_RANKS:LEADERSHIP_LEVELS).forEach(o=>{const opt=document.createElement('option');opt.value=o;opt.textContent=o;sel.appendChild(opt);});
+  document.getElementById('modalOverlay').classList.add('active');
+  setTimeout(()=>document.getElementById('inputFirst').focus(),100);
+}
+
+function closeModal(){document.getElementById('modalOverlay').classList.remove('active');pendingSignup=null;}
+document.getElementById('modalCancel').onclick=closeModal;
+document.getElementById('modalOverlay').onclick=e=>{if(e.target===document.getElementById('modalOverlay'))closeModal();};
+document.getElementById('confirmClose').onclick=()=>document.getElementById('confirmOverlay').classList.remove('active');
+document.getElementById('confirmOverlay').onclick=e=>{if(e.target===document.getElementById('confirmOverlay'))document.getElementById('confirmOverlay').classList.remove('active');};
+
+document.getElementById('modalConfirm').onclick=async()=>{
+  const first=document.getElementById('inputFirst').value.trim();
+  const last=document.getElementById('inputLast').value.trim();
+  const email=document.getElementById('inputEmail').value.trim();
+  const level=document.getElementById('inputLevel').value;
+  let valid=true;
+  ['inputFirst','inputLast','inputEmail','inputLevel'].forEach(id=>document.getElementById(id).classList.remove('error'));
+  if(!first){document.getElementById('inputFirst').classList.add('error');valid=false;}
+  if(!last){document.getElementById('inputLast').classList.add('error');valid=false;}
+  if(!email||!email.includes('@')){document.getElementById('inputEmail').classList.add('error');valid=false;}
+  if(!level){document.getElementById('inputLevel').classList.add('error');valid=false;}
+  if(!valid) return;
+
+  const btn=document.getElementById('modalConfirm');
+  btn.disabled=true; btn.textContent='Saving...';
+
+  const{wkKey,ci,si}=pendingSignup;
+  const s=getSignups(wkKey,ci);
+  if(s[si].length<WEEKLY_TEMPLATE[ci].spots[si].count){
+    s[si].push({firstName:first,lastName:last,fullName:`${first} ${last}`,email,level});
+    await saveToCloud(store);
+    // Show confirmation popup
+    const cls=WEEKLY_TEMPLATE[ci], spot=cls.spots[si];
+    const wk=ACTIVE_WEEKS.find(w=>w.key===wkKey);
+    document.getElementById('confirmDetails').innerHTML=
+      `<strong style="color:var(--white);font-size:1rem;">${first} ${last}</strong><br>
+       ${cls.day} · ${cls.time} · ${cls.name}<br>
+       <span style="color:var(--gold)">${spot.label}</span><br>
+       Week of ${wk.label}`;
+    document.getElementById('confirmOverlay').classList.add('active');
+  }
+  btn.disabled=false; btn.textContent='Claim Spot →';
+  closeModal();
+  renderWeek(wkKey);
+};
+
+// ─── STATUS ──────────────────────────────────────────────────
+function getStatus(wkKey,ci){
+  const s=getSignups(wkKey,ci);
+  const total=WEEKLY_TEMPLATE[ci].spots.reduce((a,sp)=>a+sp.count,0);
+  const filled=s.reduce((a,arr)=>a+arr.length,0);
+  return filled===0?'open':filled>=total?'full':'partial';
+}
+
+// ─── RENDER SLOTS ────────────────────────────────────────────
+function renderSlots(wkKey,ci,si){
+  const spot=WEEKLY_TEMPLATE[ci].spots[si];
+  const list=getSignups(wkKey,ci)[si];
+  let html='';
+  for(let i=0;i<spot.count;i++){
+    if(list[i]){
+      const p=list[i];
+      const emailLine=isAdmin?`<div class="slot-detail" style="color:#555">${p.email}</div>`:'';
+      const removeBtn=isAdmin?`<button class="remove-btn" onclick="removeSignup('${wkKey}',${ci},${si},${i})">✕ Remove</button>`:'';
+      html+=`<div class="slot-row">
+        <div class="slot-dot filled"></div>
+        <div class="slot-info">
+          <div class="slot-name">${p.fullName||p.name||''}</div>
+          <div class="slot-detail">${p.level}</div>
+          ${emailLine}
+        </div>
+        ${removeBtn}
+      </div>`;
+    } else {
+      html+=`<div class="slot-row"><div class="slot-dot empty"></div><div class="slot-info"><div class="slot-empty-text">Open spot</div></div></div>`;
+    }
+  }
+  if(list.length<spot.count){
+    html+=`<button class="signup-btn" onclick="openModal('${wkKey}',${ci},${si})">+ Claim Spot</button>`;
+  }
+  return html;
+}
+
+async function removeSignup(wkKey,ci,si,idx){
+  getSignups(wkKey,ci)[si].splice(idx,1);
+  await saveToCloud(store);
+  showToast('Signup removed');
+  renderWeek(wkKey);
+}
+
+// ─── RENDER WEEK ─────────────────────────────────────────────
+function renderWeek(wkKey){
+  const panel=document.getElementById(`panel-${wkKey}`);
+  if(!panel) return;
+  const wk=ACTIVE_WEEKS.find(w=>w.key===wkKey);
+
+  let totalSpots=0,filledSpots=0;
+  WEEKLY_TEMPLATE.forEach((_,ci)=>{
+    totalSpots+=WEEKLY_TEMPLATE[ci].spots.reduce((a,sp)=>a+sp.count,0);
+    filledSpots+=getSignups(wkKey,ci).reduce((a,arr)=>a+arr.length,0);
+  });
+  const openClasses=WEEKLY_TEMPLATE.filter((_,ci)=>getStatus(wkKey,ci)!=='full').length;
+  panel.querySelector('.summary-bar').innerHTML=`
+    <div class="summary-stat"><div class="num">${WEEKLY_TEMPLATE.length}</div><div class="lbl">Classes</div></div>
+    <div class="summary-stat"><div class="num">${filledSpots}</div><div class="lbl">Signed Up</div></div>
+    <div class="summary-stat"><div class="num">${totalSpots-filledSpots}</div><div class="lbl">Open Spots</div></div>
+    <div class="summary-stat"><div class="num">${openClasses}</div><div class="lbl">Need Help</div></div>`;
+
+  let adminHtml='';
+  WEEKLY_TEMPLATE.forEach((cls,ci)=>{
+    const s=getSignups(wkKey,ci);
+    const sh=cls.spots.map((spot,si)=>{
+      const entries=s[si]&&s[si].length?s[si].map(p=>`${p.fullName||p.name} <span style="color:#555;font-size:0.68rem">(${p.email})</span>`).join(', '):'—';
+      return`<div class="admin-spots">${spot.label}: ${entries}</div>`;
+    }).join('');
+    adminHtml+=`<div class="admin-class-row"><strong>${cls.day} ${cls.time} · ${cls.name}</strong>${sh}</div>`;
+  });
+  panel.querySelector('.admin-grid').innerHTML=adminHtml;
+
+  const days=[...new Set(WEEKLY_TEMPLATE.map(c=>c.day))];
+  const icons=['🎖','⭐','➕'];
+  let schedHtml='';
+  days.forEach(day=>{
+    const classes=WEEKLY_TEMPLATE.map((c,i)=>({...c,idx:i})).filter(c=>c.day===day);
+    schedHtml+=`<div class="day-group"><div class="day-header">${day}</div>`;
+    classes.forEach(cls=>{
+      const status=getStatus(wkKey,cls.idx);
+      const s=getSignups(wkKey,cls.idx);
+      const totalMax=cls.spots.reduce((a,sp)=>a+sp.count,0);
+      const totalFilled=s.reduce((a,arr)=>a+arr.length,0);
+      const bc=status==='full'?'badge-full':status==='partial'?'badge-partial':'badge-open';
+      const bt=status==='full'?'✓ Full':status==='partial'?'Partially Filled':'Needs Leaders';
+      const sh=cls.spots.map((spot,si)=>`
+        <div class="slot-section">
+          <div class="slot-label">${icons[si]||'•'} ${spot.label} (${s[si]?s[si].length:0}/${spot.count})</div>
+          ${renderSlots(wkKey,cls.idx,si)}
+        </div>`).join('');
+      schedHtml+=`
+        <div class="class-card" id="card-${wkKey}-${cls.idx}">
+          <div class="class-header" onclick="toggleCard('${wkKey}-${cls.idx}')">
+            <div class="class-info">
+              <div class="class-name">${cls.name}</div>
+              <div class="class-meta">${cls.time} · ${cls.duration} · ${cls.desc}</div>
+            </div>
+            <span class="badge ${bc}">${bt}${status!=='full'?' · '+(totalMax-totalFilled)+' open':''}</span>
+            <span class="chevron">▼</span>
+          </div>
+          <div class="class-body">${sh}</div>
+        </div>`;
+    });
+    schedHtml+='</div>';
+  });
+  panel.querySelector('.schedule-area').innerHTML=schedHtml;
+}
+
+function toggleCard(id){document.getElementById('card-'+id).classList.toggle('open');}
+
+// ─── RENDER ARCHIVE ──────────────────────────────────────────
+function renderArchive(){
+  const panel=document.getElementById('panel-archive');
+  if(!panel) return;
+  const hoursMap={};
+  store.archivedWeeks.forEach(aw=>{
+    if(!aw.signups) return;
+    Object.values(aw.signups).forEach(cs=>{
+      if(!cs) return;
+      cs.forEach(sa=>{if(!sa)return;sa.forEach(p=>{
+        const name=p.fullName||p.name||'';
+        if(!hoursMap[name])hoursMap[name]={classes:0,level:p.level,email:p.email||''};
+        hoursMap[name].classes++;
+      });});
+    });
+  });
+  const sorted=Object.entries(hoursMap).sort((a,b)=>b[1].classes-a[1].classes);
+  let html='';
+  if(sorted.length>0){
+    html+=`<div class="hours-section"><div class="hours-title">📊 Leadership Participation — All Time</div><div class="hours-grid">`;
+    sorted.forEach(([name,data])=>{
+      html+=`<div class="hours-card"><div class="h-count">${data.classes}</div><div class="h-name">${name}</div><div class="h-stats">${data.level} · ${data.classes} class${data.classes!==1?'es':''}</div><div class="h-email">${data.email}</div></div>`;
+    });
+    html+=`</div></div>`;
+  }
+  if(store.archivedWeeks.length===0){
+    html+=`<div class="archive-empty"><span class="big">📁 NO ARCHIVE YET</span>Past weeks appear here automatically.</div>`;
+  } else {
+    store.archivedWeeks.forEach(aw=>{
+      html+=`<div class="archive-week-block"><div class="archive-week-title">Week of ${aw.label} <span>Archived</span></div>`;
+      const rows=[];
+      WEEKLY_TEMPLATE.forEach((cls,ci)=>{
+        const cs=aw.signups&&aw.signups[ci]; if(!cs)return;
+        cls.spots.forEach((spot,si)=>{(cs[si]||[]).forEach(p=>{rows.push({day:cls.day,time:cls.time,className:cls.name,role:spot.label,name:p.fullName||p.name||'',level:p.level,email:p.email||''});});});
+      });
+      if(rows.length===0){
+        html+=`<table class="archive-table"><tr class="no-signups"><td colspan="6">No signups recorded</td></tr></table>`;
+      } else {
+        html+=`<table class="archive-table"><thead><tr><th>Name</th><th>Level</th><th>Day</th><th>Class</th><th>Role</th><th>Email</th></tr></thead><tbody>`;
+        rows.forEach(r=>{html+=`<tr><td>${r.name}</td><td>${r.level}</td><td>${r.day}</td><td>${r.className} · ${r.time}</td><td>${r.role}</td><td class="email-cell">${r.email}</td></tr>`;});
+        html+=`</tbody></table>`;
+      }
+      html+=`</div>`;
+    });
+  }
+  panel.querySelector('.archive-content').innerHTML=html;
+}
+
+// ─── BUILD UI ────────────────────────────────────────────────
+function buildUI(){
+  const tabsContainer=document.getElementById('tabsContainer');
+  const mainContent=document.getElementById('mainContent');
+  ACTIVE_WEEKS.forEach((wk,i)=>{
+    const tab=document.createElement('div');
+    tab.className='tab'+(i===0?' active':'');
+    tab.id=`tab-${wk.key}`;
+    tab.innerHTML=`<span class="tab-top">${wk.label}${wk.isCurrent?'<span class="current-pill">THIS WEEK</span>':''}</span><span class="tab-sub">${wk.isCurrent?'Current week':'Upcoming'}</span>`;
+    tab.onclick=()=>switchTab(i);
+    tabsContainer.appendChild(tab);
+    const panel=document.createElement('div');
+    panel.className='week-panel'+(i===0?' active':'');
+    panel.id=`panel-${wk.key}`;
+    panel.innerHTML=`<div class="summary-bar"></div><div class="admin-panel" id="admin-${wk.key}"><h3>🗂 Signup Summary — ${wk.label}</h3><div class="admin-grid"></div></div><div class="schedule-area"></div>`;
+    mainContent.appendChild(panel);
+  });
+  const archiveTab=document.createElement('div');
+  archiveTab.className='tab archive-tab';
+  archiveTab.innerHTML=`<span class="tab-top">📁 Archive</span><span class="tab-sub">Past weeks + hours</span>`;
+  archiveTab.onclick=()=>switchTab(4);
+  tabsContainer.appendChild(archiveTab);
+  const archivePanel=document.createElement('div');
+  archivePanel.className='week-panel';
+  archivePanel.id='panel-archive';
+  archivePanel.innerHTML=`<div class="archive-content"></div>`;
+  mainContent.appendChild(archivePanel);
+}
+
+function switchTab(i){
+  currentTab=i;
+  document.querySelectorAll('.tab').forEach((t,idx)=>t.classList.toggle('active',idx===i));
+  document.querySelectorAll('.week-panel').forEach((p,idx)=>p.classList.toggle('active',idx===i));
+  ACTIVE_WEEKS.forEach((wk,wi)=>{
+    const ap=document.getElementById(`admin-${wk.key}`);
+    if(ap) ap.classList.toggle('visible',isAdmin&&wi===i);
+  });
+  if(i===4) renderArchive();
+}
+
+// ─── EXPORT CSV ──────────────────────────────────────────────
+document.getElementById('exportBtn').onclick=()=>{
+  let csv='Week,Day,Time,Class,Spot Type,First Name,Last Name,Email,Level / Rank\n';
+  ACTIVE_WEEKS.forEach(wk=>{
+    WEEKLY_TEMPLATE.forEach((cls,ci)=>{
+      const s=getSignups(wk.key,ci);
+      cls.spots.forEach((spot,si)=>{(s[si]||[]).forEach(p=>{csv+=`"${wk.label}","${cls.day}","${cls.time}","${cls.name}","${spot.label}","${p.firstName||''}","${p.lastName||''}","${p.email||''}","${p.level||''}"\n`;});});
+    });
+  });
+  store.archivedWeeks.forEach(aw=>{
+    WEEKLY_TEMPLATE.forEach((cls,ci)=>{
+      const cs=aw.signups&&aw.signups[ci];if(!cs)return;
+      cls.spots.forEach((spot,si)=>{(cs[si]||[]).forEach(p=>{csv+=`"${aw.label} (archived)","${cls.day}","${cls.time}","${cls.name}","${spot.label}","${p.firstName||p.name||''}","${p.lastName||''}","${p.email||''}","${p.level||''}"\n`;});});
+    });
+  });
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='class-signups-all.csv';
+  a.click();
+};
+
+// ─── INIT ────────────────────────────────────────────────────
+async function init(){
+  buildUI();
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  store = await loadFromCloud();
+  archiveOldWeeks();
+  document.getElementById('loadingOverlay').classList.add('hidden');
+  ACTIVE_WEEKS.forEach(wk=>renderWeek(wk.key));
+  renderArchive();
+
+  // Poll for updates every 30 seconds so all users stay in sync
+  setInterval(async()=>{
+    const fresh=await loadFromCloud();
+    store=fresh;
+    archiveOldWeeks();
+    ACTIVE_WEEKS.forEach(wk=>renderWeek(wk.key));
+    if(currentTab===4) renderArchive();
+  }, 30000);
+}
+
+init();
+</script>
+</body>
+</html>
