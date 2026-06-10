@@ -405,11 +405,8 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 async function loadFromCloud() {
   try {
     setSyncStatus('syncing','Syncing...');
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/roster?key=eq.${STORE_KEY}&select=value`, {
-      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-    });
-    if (!res.ok) throw new Error('Load failed');
-    const rows = await res.json();
+    const { data: rows, error } = await sb.from('roster').select('value').eq('key', STORE_KEY);
+    if (error) throw new Error('Load failed');
     setSyncStatus('synced','Synced ✓');
     if (rows && rows.length > 0) return JSON.parse(rows[0].value);
     return { signups:{}, archivedWeeks:[] };
@@ -423,17 +420,8 @@ async function saveToCloud(store) {
   saveLocal(store);
   try {
     setSyncStatus('syncing','Saving...');
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/roster`, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
-      },
-      body: JSON.stringify({ key: STORE_KEY, value: JSON.stringify(store), updated_at: new Date().toISOString() })
-    });
-    if (!res.ok) throw new Error('Save failed');
+    const { error } = await sb.from('roster').upsert({ key: STORE_KEY, value: JSON.stringify(store), updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw new Error('Save failed');
     setSyncStatus('synced','Saved ✓');
   } catch(e) {
     setSyncStatus('error','Save failed — retrying...');
@@ -995,7 +983,7 @@ async function doAuthSignup(){
   if(!name||!email||!pw){ err.textContent='All fields required.'; err.style.display='block'; return; }
   if(pw.length < 6){ err.textContent='Password must be at least 6 characters.'; err.style.display='block'; return; }
   if(pw !== confirm){ err.textContent='Passwords do not match.'; err.style.display='block'; return; }
-  const { data: allowed } = await sb.from('allowed_emails').select('email').eq('email', email).single();
+  const { data: allowed } = await sb.rpc('is_email_allowed', { check_email: email });
   if(!allowed){ err.textContent='Email not on file with BaresTKD. Contact your instructor.'; err.style.display='block'; return; }
   const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { full_name: name } } });
   if(error){ err.textContent = error.message; err.style.display='block'; return; }
