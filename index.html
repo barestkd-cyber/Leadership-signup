@@ -225,7 +225,7 @@
     </div>
     <div id="lead-login-err" style="color:#c8102e;font-size:0.75rem;margin-bottom:10px;display:none;">Incorrect email or password.</div>
     <button onclick="doLeadLogin()" style="width:100%;padding:12px;background:var(--gold);border:none;border-radius:6px;font-family:'Bebas Neue',sans-serif;font-size:1rem;letter-spacing:3px;cursor:pointer;color:#111;">Sign In</button>
-    <div style="text-align:center;margin-top:14px;font-size:0.75rem;color:#888;">No account? Contact your instructor.</div>
+    <div style="text-align:center;margin-top:14px;font-size:0.75rem;color:#888;">No account? <span onclick="openAuthModal();showAuthSignup();" style="color:var(--gold);cursor:pointer;font-weight:600;">Create one</span></div>
     <div style="text-align:center;margin-top:8px;font-size:0.75rem;"><span onclick="doPasswordReset()" style="color:#888;cursor:pointer;text-decoration:underline;">Forgot password?</span></div>
   </div>
 </div>
@@ -970,14 +970,10 @@ async function doAuthSignup(){
   await loadUserProfile();
 }
 
-function showUserMenu(){
+async function showUserMenu(){
   if(confirm('Sign out of BaresTKD?')){
-    BTKD.signOut();
-    currentUser = null;
-    currentRole = null;
-    isAdmin = false;
-    const btn = document.getElementById('authBtn');
-    if(btn) btn.textContent = 'Sign In';
+    await BTKD.signOut();
+    location.reload();
   }
 }
 
