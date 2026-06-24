@@ -21,7 +21,7 @@
   html,body{height:100%;}
   body{background:var(--bg);color:var(--text);font-family:'Source Sans 3',system-ui,sans-serif;
     -webkit-font-smoothing:antialiased;overflow:hidden;}
-  .app{height:100vh;max-width:760px;margin:0 auto;display:flex;flex-direction:column;padding:18px 18px 0;}
+  .app{height:100vh;height:100dvh;max-width:760px;margin:0 auto;display:flex;flex-direction:column;padding:18px 18px 0;}
 
   header{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
   .logo{font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.6rem;letter-spacing:.05em;text-transform:uppercase;line-height:1;}
@@ -268,13 +268,14 @@ const canvas=document.createElement('canvas');
 const ctx=canvas.getContext('2d',{willReadFrequently:true});
 function startCam(){
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ camFail(); return; }
-  navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}})
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}}})
     .then(stream=>{ video.srcObject=stream; video.play(); requestAnimationFrame(tick); })
     .catch(()=>camFail());
 }
 function camFail(){ document.getElementById('camerr').classList.add('show'); document.getElementById('camhint').style.display='none'; }
 function tick(){
-  if(!scanPaused && video.readyState===video.HAVE_ENOUGH_DATA && typeof jsQR!=='undefined'){
+  if(typeof jsQR==='undefined'){ document.getElementById('camhint').textContent='Scanner library didn’t load — check connection'; requestAnimationFrame(tick); return; }
+  if(!scanPaused && video.readyState>=video.HAVE_CURRENT_DATA && video.videoWidth>0){
     canvas.width=video.videoWidth; canvas.height=video.videoHeight;
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
     try{
