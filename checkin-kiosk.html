@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;900&family=Oswald:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://portal.barestkd.fit/shared/auth.js?v=2"></script>
 <style>
   :root{
     --bg:#0c0e13; --surface:#15181f; --surface2:#1b202a; --border:#2a3039;
@@ -169,59 +171,100 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<div style="position:fixed;bottom:6px;right:8px;font-size:.6rem;color:var(--faint);z-index:60;pointer-events:none;">build 3</div>
+
+<!-- staff login gate: the kiosk writes attendance under a staff session.
+     Log in once on the tablet; the session persists like the other apps. -->
+<div id="kioskLogin" style="display:none;position:fixed;inset:0;z-index:70;background:var(--bg);align-items:center;justify-content:center;padding:24px;">
+  <div style="width:100%;max-width:360px;background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--gold);border-radius:16px;padding:28px 22px;">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.5rem;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px;">Kiosk setup</div>
+    <div style="color:var(--muted);font-size:.85rem;margin-bottom:18px;">Staff sign-in unlocks check-in on this device. One time per tablet.</div>
+    <input id="kl-email" type="email" placeholder="staff@email.com" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:12px 14px;font-size:1rem;font-family:inherit;outline:none;margin-bottom:10px;">
+    <input id="kl-pw" type="password" placeholder="Password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:12px 14px;font-size:1rem;font-family:inherit;outline:none;margin-bottom:10px;">
+    <div id="kl-err" style="display:none;color:#ff6b6b;font-size:.8rem;margin-bottom:10px;"></div>
+    <button onclick="kioskDoLogin()" style="width:100%;background:var(--gold);color:#0c0e13;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:1rem;cursor:pointer;font-family:inherit;">Sign in</button>
+  </div>
+</div>
+<div style="position:fixed;bottom:6px;right:8px;font-size:.6rem;color:var(--faint);z-index:60;pointer-events:none;">build 4 · live</div>
 
 <script>
-const BELT={Cubs:'--b-white',Juniors:'--b-green',Teens:'--b-blue',Adults:'--b-red',Kickboxing:'--b-orange',AMPD:'--b-gold'};
+/* Live kiosk: scans resolve real students (the contacts ids inside the
+   curriculum profile QRs), and check-ins write the same attendance rows the
+   CRM roster and parent check-in use (identical class_label keys). Requires
+   a staff session once per tablet — shared barestkd-auth storage, so logging
+   into the leadership app on this device also unlocks the kiosk. */
+const sb = BTKD.sb;
 
-// classes happening right now (overlapping on purpose)
-const NOW=[
-  {id:'cubs', label:'Cubs',     time:'4:00 – 4:30', program:'cubs',    col:'--b-white'},
-  {id:'ampd', label:"AMP'D",    time:'4:20 – 5:00', program:'ampd',    col:'--gold'},
-  {id:'jr',   label:'Juniors',  time:'4:30 – 5:15', program:'juniors', col:'--b-green'}
-];
+// Identical to the CRM/curriculum mapping: which enrollment programs a
+// schedule slot admits. Do not let these three copies drift.
+const CHECKIN_GATE={'prog-cubs':'Cubs','prog-juniors':'Juniors','prog-teen':'Teens/Adults','prog-forms':['Juniors','Teens/Adults'],'prog-sparring':['Juniors','Teens/Adults'],'prog-kick':'Kickboxing','prog-ampd':"AMP'D",'prog-leader':'Leadership'};
+const POP_COL={'prog-cubs':'--b-white','prog-juniors':'--b-green','prog-teen':'--b-blue','prog-forms':'--b-red','prog-sparring':'--b-red','prog-kick':'--b-orange','prog-ampd':'--gold','prog-leader':'--gold'};
+const DAYS=['MON','TUE','WED','THU','FRI','SAT'];
 
-// mock roster. programs[] = what they're enrolled in. doubles trigger the popup.
-const STUDENTS=[
-  {id:'1', name:'Gidel Villalobos', programs:['cubs']},
-  {id:'2', name:'Logan Kim',        programs:['cubs','ampd']},   // overlap
-  {id:'3', name:'Miles Eikner',     programs:['cubs']},
-  {id:'4', name:'Daniel Ko',        programs:['cubs','ampd']},   // overlap
-  {id:'5', name:'Hunter Lerche',    programs:['juniors']},
-  {id:'6', name:'Ezra Lackey',      programs:['juniors']},
-  {id:'7', name:'Iliza Randall',    programs:['juniors','ampd']},// overlap
-  {id:'8', name:'Kai Oglesby',      programs:['juniors','ampd']},// overlap
-  {id:'9', name:'Sam Watkins',      programs:['ampd']},
-  {id:'10',name:'Morgan Mogle',     programs:['juniors']}
-];
-
-const checkedIn=new Set();      // `${studentId}:${sessionId}`
+let ROSTER=[], ENR=[], SCHED=[], ATT=new Set(), DATA_OK=false, CAM_ON=false;
 let scanPaused=false, lastCode='', lastAt=0;
 
-function eligibleNow(s){ return NOW.filter(n=>s.programs.includes(n.program)); }
+function ymd(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function todayIdx(){ return (new Date().getDay()+6)%7; } // 0=Mon … 6=Sun
+function labelOf(r){ return (r.label||'Class')+(r.belt?(' · '+r.belt):'')+(r.time?('  '+DAYS[r.day]+' '+r.time):''); }
+function gateOf(r){ const g=CHECKIN_GATE[r.prog_css]||'Juniors'; return Array.isArray(g)?g[0]:g; }
+
+async function loadData(){
+  const [st,en,sc,at]=await Promise.all([
+    sb.from('students').select('id,name'),
+    sb.from('enrollments').select('student_id,program').eq('status','active'),
+    sb.from('schedule_template').select('day,time,time_h,time_m,label,belt,prog_css'),
+    sb.from('attendance').select('student_id,class_label').eq('class_date', ymd())
+  ]);
+  if(st.error||en.error||sc.error||at.error){
+    console.error('kiosk load', st.error||en.error||sc.error||at.error);
+    toast('Load failed — is this a staff account?');
+    return false;
+  }
+  ROSTER=st.data||[]; ENR=en.data||[]; SCHED=sc.data||[];
+  ATT=new Set((at.data||[]).map(r=>r.student_id+'|'+r.class_label));
+  DATA_OK=true;
+  return true;
+}
+async function refreshAttendance(){
+  const r=await sb.from('attendance').select('student_id,class_label').eq('class_date', ymd());
+  if(!r.error) ATT=new Set((r.data||[]).map(x=>x.student_id+'|'+x.class_label));
+}
+
+function todaysFor(s){
+  const progs=ENR.filter(e=>e.student_id===s.id).map(e=>e.program);
+  return SCHED.filter(r=>r.day===todayIdx()).filter(r=>{
+    const g=CHECKIN_GATE[r.prog_css]||'Juniors';
+    const list=Array.isArray(g)?g:[g];
+    return list.some(p=>progs.indexOf(p)!==-1);
+  }).sort((a,b)=>((a.time_h||0)*60+(a.time_m||0))-((b.time_h||0)*60+(b.time_m||0)));
+}
 function findStudent(code){
   code=(code||'').trim();
-  return STUDENTS.find(s=>s.id===code) || STUDENTS.find(s=>s.name.toLowerCase()===code.toLowerCase()) || null;
+  return ROSTER.find(s=>s.id===code) || ROSTER.find(s=>(s.name||'').toLowerCase()===code.toLowerCase()) || null;
 }
 
 // ---- resolve a scan or tap ----
 function resolve(student, rawCode){
-  if(!student){ guest(rawCode); return; }
-  const opts=eligibleNow(student);
-  if(opts.length===0){ toast(student.name+' has no class right now'); return; }
+  if(!DATA_OK){ toast('Still loading — one sec'); return; }
+  if(!student){ beep(true); confirmCard('Not recognized', '', "That code isn't on the roster. Ask at the desk.", true); return; }
+  const opts=todaysFor(student);
+  if(opts.length===0){ toast(student.name+' has no class today'); return; }
   if(opts.length===1){ signIn(student, opts[0]); return; }
   showPop(student, opts);
 }
-function signIn(student, session){
-  const key=student.id+':'+session.id;
-  const dupe=checkedIn.has(key);
-  if(!dupe) checkedIn.add(key);
-  beep(dupe);
-  confirmCard(student.name, session.label+'  ·  '+session.time, dupe?'Already checked in':'You\'re in. Have a good class!', dupe);
-}
-function guest(code){ // unrecognized code: still show the scan worked (for camera testing)
+async function signIn(student, cls){
+  const lbl=labelOf(cls);
+  const key=student.id+'|'+lbl;
+  const nice=(cls.label||'Class')+(cls.belt?(' · '+cls.belt):'')+(cls.time?('  ·  '+cls.time):'');
+  if(ATT.has(key)){ beep(true); confirmCard(student.name, nice, 'Already checked in', true); return; }
+  let email='kiosk'; try{ const s=await BTKD.getSession(); email=(s&&s.user&&s.user.email)||'kiosk'; }catch(e){}
+  const row={student_id:student.id, class_label:lbl, program:gateOf(cls), class_date:ymd(),
+             status:'confirmed', source:'kiosk', recorded_by:email};
+  const r=await sb.from('attendance').insert(row);
+  if(r.error){ beep(true); toast('Check-in failed: '+r.error.message); return; }
+  ATT.add(key);
   beep(false);
-  confirmCard('Scanned', code||'', 'Code read OK (not in this mock roster)', false);
+  confirmCard(student.name, nice, "You're in. Have a good class!", false);
 }
 
 // ---- UI: confirm ----
@@ -240,13 +283,16 @@ function confirmCard(who, cls, msg, dupe){
 function showPop(student, opts){
   scanPaused=true;
   document.getElementById('popName').textContent=student.name;
-  document.getElementById('popOpts').innerHTML=opts.map(o=>
-    `<button class="opt" style="--bcol:var(${o.col})" onclick="pickPop('${student.id}','${o.id}')">${o.label}<small>${o.time}</small></button>`).join('');
+  document.getElementById('popOpts').innerHTML=opts.map((o,i)=>
+    `<button class="opt" style="--bcol:var(${POP_COL[o.prog_css]||'--gold'})" onclick="pickPop('${student.id}',${i})">${(o.label||'Class')+(o.belt?(' · '+o.belt):'')}<small>${o.time||''}</small></button>`).join('');
   document.getElementById('popOv').classList.add('show');
 }
-function pickPop(sid, oid){
-  const s=STUDENTS.find(x=>x.id===sid), o=NOW.find(x=>x.id===oid);
-  closePop(); signIn(s,o);
+function pickPop(sid, idx){
+  const s=ROSTER.find(x=>x.id===sid);
+  closePop();
+  if(!s) return;
+  const o=todaysFor(s)[idx];
+  if(o) signIn(s,o);
 }
 function closePop(){ document.getElementById('popOv').classList.remove('show'); scanPaused=false; }
 
@@ -255,12 +301,12 @@ function renderSearch(){
   const q=document.getElementById('search').value.trim().toLowerCase();
   const box=document.getElementById('results');
   if(!q){ box.innerHTML=''; return; }
-  box.innerHTML=STUDENTS.filter(s=>s.name.toLowerCase().includes(q)).slice(0,8)
+  box.innerHTML=ROSTER.filter(s=>(s.name||'').toLowerCase().includes(q)).slice(0,8)
     .map(s=>`<button class="pick" onclick="pickName('${s.id}')">${s.name}</button>`).join('');
 }
 function pickName(id){
   document.getElementById('search').value=''; document.getElementById('results').innerHTML='';
-  resolve(STUDENTS.find(s=>s.id===id), null);
+  resolve(ROSTER.find(s=>s.id===id), null);
 }
 
 // ---- camera scan loop ----
@@ -269,14 +315,13 @@ const canvas=document.createElement('canvas');
 const ctx=canvas.getContext('2d',{willReadFrequently:true});
 function startCam(){
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ camFail(); return; }
-  navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}}})
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}})
     .then(stream=>{ video.srcObject=stream; video.play(); requestAnimationFrame(tick); })
     .catch(()=>camFail());
 }
 function camFail(){ document.getElementById('camerr').classList.add('show'); document.getElementById('camhint').style.display='none'; }
 function tick(){
-  if(typeof jsQR==='undefined'){ document.getElementById('camhint').textContent='Scanner library didn’t load — check connection'; requestAnimationFrame(tick); return; }
-  if(!scanPaused && video.readyState>=video.HAVE_CURRENT_DATA && video.videoWidth>0){
+  if(!scanPaused && video.readyState===video.HAVE_ENOUGH_DATA && typeof jsQR!=='undefined'){
     canvas.width=video.videoWidth; canvas.height=video.videoHeight;
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
     try{
@@ -291,14 +336,11 @@ function tick(){
   requestAnimationFrame(tick);
 }
 
-// ---- test QR codes ----
+// ---- test QR codes (real roster ids) ----
 function openTest(){
   const grid=document.getElementById('qrgrid');
-  if(!grid.dataset.built){
-    grid.innerHTML=STUDENTS.map(s=>`<div class="qrcard"><canvas id="qr_${s.id}"></canvas><div class="qn">${s.name}</div><div class="qt">${eligibleNow(s).length>1?'overlap →':' '}code: ${s.id}</div></div>`).join('');
-    if(typeof QRious!=='undefined'){ STUDENTS.forEach(s=>{ new QRious({element:document.getElementById('qr_'+s.id),value:s.id,size:200,level:'M'}); }); }
-    grid.dataset.built='1';
-  }
+  grid.innerHTML=ROSTER.slice(0,10).map(s=>`<div class="qrcard"><canvas id="qr_${s.id}"></canvas><div class="qn">${s.name}</div><div class="qt">${todaysFor(s).length} class(es) today</div></div>`).join('');
+  if(typeof QRious!=='undefined'){ ROSTER.slice(0,10).forEach(s=>{ new QRious({element:document.getElementById('qr_'+s.id),value:String(s.id),size:200,level:'M'}); }); }
   document.getElementById('testPanel').classList.add('show');
 }
 function closeTest(){ document.getElementById('testPanel').classList.remove('show'); }
@@ -320,14 +362,26 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
   clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
 
 function clock(){ document.getElementById('clock').textContent=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
-// real visible height (window.innerHeight is accurate on every browser; no dvh needed)
-function setAppHeight(){ document.documentElement.style.setProperty('--apph', window.innerHeight + 'px'); }
-setAppHeight();
-window.addEventListener('resize', setAppHeight);
-window.addEventListener('orientationchange', ()=>setTimeout(setAppHeight, 300));
 
+// ---- auth gate + boot ----
+async function kioskDoLogin(){
+  const err=document.getElementById('kl-err'); err.style.display='none';
+  const { error } = await BTKD.signIn({ email:(document.getElementById('kl-email').value||'').trim(), password:document.getElementById('kl-pw').value });
+  if(error){ err.textContent=error; err.style.display='block'; return; }
+  const role=await BTKD.getMyRole({refresh:true});
+  if(role!=='admin' && role!=='instructor'){ err.textContent='Staff account required.'; err.style.display='block'; await BTKD.signOut(); return; }
+  document.getElementById('kioskLogin').style.display='none';
+  boot();
+}
+async function boot(){
+  const session=await BTKD.getSession();
+  if(!session){ document.getElementById('kioskLogin').style.display='flex'; return; }
+  if(!(await loadData())) return;
+  if(!CAM_ON){ CAM_ON=true; startCam(); }
+  if(!boot._t) boot._t=setInterval(refreshAttendance, 10*60*1000); // stay fresh vs app/CRM check-ins
+}
 clock(); setInterval(clock,10000);
-startCam();
+boot();
 </script>
 </body>
 </html>
