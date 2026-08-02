@@ -140,7 +140,7 @@
   </div>
 </div>
 
-<div class="testbar"><button onclick="openTest()">show test QR codes</button></div>
+<div id="kioskDown" style="display:none;position:fixed;top:0;left:0;right:0;z-index:60;background:var(--red);color:#fff;text-align:center;font-weight:700;padding:9px;font-size:.9rem;">Kiosk needs attention — please get a staff member</div>
 
 <!-- confirm -->
 <div class="overlay" id="confirmOv">
@@ -225,10 +225,8 @@ async function loadData(){
   DATA_OK=true;
   return true;
 }
-async function refreshAttendance(){
-  const r=await sb.from('attendance').select('student_id,class_label').eq('class_date', ymd());
-  if(!r.error) ATT=new Set((r.data||[]).map(x=>x.student_id+'|'+x.class_label));
-}
+// (attendance refresh happens via the loadData timer in boot(), which also
+// refreshes roster/enrollments/schedule and drives the attention banner)
 
 function todaysFor(s){
   const progs=ENR.filter(e=>e.student_id===s.id).map(e=>e.program);
@@ -261,7 +259,14 @@ async function signIn(student, cls){
   const row={student_id:student.id, class_label:lbl, program:gateOf(cls), class_date:ymd(),
              status:'confirmed', source:'kiosk', recorded_by:email};
   const r=await sb.from('attendance').insert(row);
-  if(r.error){ beep(true); toast('Check-in failed: '+r.error.message); return; }
+  if(r.error){
+    beep(true);
+    if(String(r.error.code)==='23505'){ ATT.add(key); confirmCard(student.name, nice, 'Already checked in', true); return; }
+    // Loud failure — a quiet toast lets a parent walk away thinking they're in.
+    confirmCard('Check-in failed', '', 'Please get a staff member — the kiosk may be signed out.', true);
+    kioskBanner(true);
+    return;
+  }
   ATT.add(key);
   beep(false);
   confirmCard(student.name, nice, "You're in. Have a good class!", false);
@@ -376,9 +381,25 @@ async function kioskDoLogin(){
 async function boot(){
   const session=await BTKD.getSession();
   if(!session){ document.getElementById('kioskLogin').style.display='flex'; return; }
-  if(!(await loadData())) return;
+  // A session alone isn't enough — a parent logging into curriculum on this
+  // tablet shares the same stored session. Require a staff role or re-login.
+  const role=await BTKD.getMyRole({refresh:true});
+  if(role!=='admin' && role!=='instructor'){
+    const err=document.getElementById('kl-err');
+    if(err){ err.textContent='Staff account required — this tablet is signed in as a non-staff account.'; err.style.display='block'; }
+    document.getElementById('kioskLogin').style.display='flex';
+    return;
+  }
+  if(!(await loadData())){ kioskBanner(true); return; }
+  kioskBanner(false);
   if(!CAM_ON){ CAM_ON=true; startCam(); }
-  if(!boot._t) boot._t=setInterval(refreshAttendance, 10*60*1000); // stay fresh vs app/CRM check-ins
+  // Refresh EVERYTHING on the timer — roster, enrollments, schedule, and
+  // attendance — so same-day enrollments and schedule edits reach the kiosk.
+  if(!boot._t) boot._t=setInterval(async()=>{ kioskBanner(!(await loadData())); }, 10*60*1000);
+}
+function kioskBanner(show){
+  const b=document.getElementById('kioskDown');
+  if(b) b.style.display=show?'block':'none';
 }
 clock(); setInterval(clock,10000);
 boot();
