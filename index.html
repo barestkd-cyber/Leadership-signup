@@ -168,7 +168,7 @@
   .hours-card .h-stats { font-size: 0.7rem; color: var(--text-muted); margin-top: 3px; }
   .hours-card .h-email { font-size: 0.68rem; color: #555; margin-top: 2px; }
 
-  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1e1e1e; border: 1px solid #444; border-radius: 8px; padding: 10px 20px; font-size: 0.82rem; color: var(--white); z-index: 400; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1e1e1e; border: 1px solid #444; border-radius: 8px; padding: 10px 20px; font-size: 0.82rem; color: var(--white); z-index: 1100; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
   .toast.show { opacity: 1; }
   .toast.success { border-color: #4caf50; color: #4caf50; }
   .toast.err     { border-color: var(--red); color: #ff6b7a; }
@@ -235,7 +235,7 @@
   <div class="header-right">
     <button class="hdr-btn" id="authBtn" onclick="handleAuthBtn()">Sign In</button>
     <button class="hdr-btn" id="adminToggle">⚙ Admin</button>
-    <button class="hdr-btn" id="exportBtn">↓ CSV</button>
+    <button class="hdr-btn" id="exportBtn" style="display:none">↓ CSV</button>
   </div>
 </header>
 
@@ -357,6 +357,11 @@ const ADMIN_PASSWORD = 'sensei2024';
 const INSTRUCTOR_RANKS   = ["Instructor's Aid","Instructor Trainee","Assistant Instructor","Lead Instructor","Senior Lead Instructor"];
 const LEADERSHIP_LEVELS  = ["Leadership Level 1","Leadership Level 2","Leadership Level 3","Leadership Level 4","Leadership Level 5","Leadership Level 6","Leadership Level 7"];
 
+// Escape user-typed values before they land in innerHTML — signup names,
+// emails and levels come from strangers' keyboards (same rule as the CRM).
+function escHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function csvCell(s){return '"'+String(s==null?'':s).replace(/"/g,'""')+'"';}
+
 const WEEKLY_TEMPLATE = [
   { day:"Monday",    time:"5:00 PM",  duration:"45 min", name:"Juniors – Green/Black",  desc:"Green through Black · Adult leaders only",  spots:[{label:"Instructor",count:1,type:"instructor"},{label:"Black Belt+ Leader",count:2,type:"leader"}] },
   { day:"Tuesday",   time:"4:00 PM",  duration:"30 min", name:"Cubs",                   desc:"Little ones · All ranks welcome",            spots:[{label:"Instructor",count:2,type:"instructor"},{label:"Leader",count:3,type:"leader"}] },
@@ -372,16 +377,24 @@ const WEEKLY_TEMPLATE = [
 ];
 
 // ─── WEEK HELPERS ────────────────────────────────────────────
-function getMonday(d) {
-  const date=new Date(d); date.setHours(0,0,0,0);
-  const day=date.getDay(); date.setDate(date.getDate()+(day===0?-6:1-day)); return date;
+// Week math is anchored to studio time (America/Chicago), never the viewer's
+// clock or UTC. The Date objects are local-noon tokens carrying the Chicago
+// Y/M/D, so toISOString-style UTC shifts can never move a key or a label.
+function chicagoToday(){
+  const parts={};
+  new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',year:'numeric',month:'numeric',day:'numeric',weekday:'short'})
+    .formatToParts(new Date()).forEach(p=>parts[p.type]=p.value);
+  return { date:new Date(+parts.year, parts.month-1, +parts.day, 12),
+           dow:{Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6}[parts.weekday] };
 }
 function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
 function fmtShort(d){return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
-function weekKey(monday){return monday.toISOString().slice(0,10);}
+function pad2(n){return String(n).padStart(2,'0');}
+function weekKey(monday){return monday.getFullYear()+'-'+pad2(monday.getMonth()+1)+'-'+pad2(monday.getDate());}
+function parseKeyLocal(key){const[y,m,d]=key.split('-').map(Number);return new Date(y,m-1,d,12);}
 
-const today=new Date();
-const thisMonday=getMonday(today);
+const chi=chicagoToday();
+const thisMonday=addDays(chi.date, chi.dow===0?-6:1-chi.dow);
 const ACTIVE_WEEKS=Array.from({length:4},(_,i)=>{
   const start=addDays(thisMonday,i*7), end=addDays(start,5);
   return{start,end,key:weekKey(start),label:`${fmtShort(start)} – ${fmtShort(end)}`,isCurrent:i===0};
@@ -446,11 +459,11 @@ function archiveOldWeeks() {
   const activeKeys=new Set(ACTIVE_WEEKS.map(w=>w.key));
   Object.keys(store.signups).forEach(key=>{
     if(!activeKeys.has(key)&&!store.archivedWeeks.some(aw=>aw.key===key)){
-      const monday=new Date(key), saturday=addDays(monday,5);
+      const monday=parseKeyLocal(key), saturday=addDays(monday,5);
       store.archivedWeeks.push({key,label:`${fmtShort(monday)} – ${fmtShort(saturday)}`,signups:store.signups[key]});
     }
   });
-  store.archivedWeeks.sort((a,b)=>new Date(b.key)-new Date(a.key));
+  store.archivedWeeks.sort((a,b)=>parseKeyLocal(b.key)-parseKeyLocal(a.key));
 }
 
 function getSignups(wk,ci){
@@ -479,6 +492,13 @@ document.getElementById('adminLoginCancel').onclick = ()=>document.getElementByI
 document.getElementById('adminLoginConfirm').onclick = tryAdminLogin;
 document.getElementById('adminPassInput').onkeydown = e=>{ if(e.key==='Enter') tryAdminLogin(); };
 
+// The CSV export carries every signup email, so the button follows admin
+// state — same rule as the email lines in the slots, archive and summary.
+function syncAdminUI(){
+  const ex=document.getElementById('exportBtn');
+  if(ex) ex.style.display=isAdmin?'':'none';
+}
+
 function tryAdminLogin() {
   const pw = document.getElementById('adminPassInput').value;
   if (pw === ADMIN_PASSWORD) {
@@ -492,6 +512,8 @@ function tryAdminLogin() {
       if(ap) ap.classList.toggle('visible',wi===currentTab);
     });
     ACTIVE_WEEKS.forEach(wk=>renderWeek(wk.key));
+    renderArchive();
+    syncAdminUI();
   } else {
     document.getElementById('adminErr').style.display='block';
   }
@@ -503,6 +525,8 @@ function logoutAdmin() {
   document.getElementById('adminToggle').textContent='⚙ Admin';
   document.querySelectorAll('.admin-panel').forEach(p=>p.classList.remove('visible'));
   ACTIVE_WEEKS.forEach(wk=>renderWeek(wk.key));
+  renderArchive();
+  syncAdminUI();
   showToast('Admin mode off');
 }
 
@@ -556,7 +580,7 @@ document.getElementById('modalConfirm').onclick=async()=>{
     const cls=WEEKLY_TEMPLATE[ci], spot=cls.spots[si];
     const wk=ACTIVE_WEEKS.find(w=>w.key===wkKey);
     document.getElementById('confirmDetails').innerHTML=
-      `<strong style="color:var(--white);font-size:1rem;">${first} ${last}</strong><br>
+      `<strong style="color:var(--white);font-size:1rem;">${escHtml(first)} ${escHtml(last)}</strong><br>
        ${cls.day} · ${cls.time} · ${cls.name}<br>
        <span style="color:var(--gold)">${spot.label}</span><br>
        Week of ${wk.label}`;
@@ -583,13 +607,13 @@ function renderSlots(wkKey,ci,si){
   for(let i=0;i<spot.count;i++){
     if(list[i]){
       const p=list[i];
-      const emailLine=isAdmin?`<div class="slot-detail" style="color:#555">${p.email}</div>`:'';
+      const emailLine=isAdmin?`<div class="slot-detail" style="color:#555">${escHtml(p.email)}</div>`:'';
       const removeBtn=isAdmin?`<button class="remove-btn" onclick="removeSignup('${wkKey}',${ci},${si},${i})">✕ Remove</button>`:'';
       html+=`<div class="slot-row">
         <div class="slot-dot filled"></div>
         <div class="slot-info">
-          <div class="slot-name">${p.fullName||p.name||''}</div>
-          <div class="slot-detail">${p.level}</div>
+          <div class="slot-name">${escHtml(p.fullName||p.name||'')}</div>
+          <div class="slot-detail">${escHtml(p.level)}</div>
           ${emailLine}
         </div>
         ${removeBtn}
@@ -616,6 +640,9 @@ function renderWeek(wkKey){
   const panel=document.getElementById(`panel-${wkKey}`);
   if(!panel) return;
   const wk=ACTIVE_WEEKS.find(w=>w.key===wkKey);
+  // Keep expanded cards expanded — the 30s sync poll re-renders every week,
+  // and collapsing a card someone is reading reads as the app glitching.
+  const openCards=Array.from(panel.querySelectorAll('.class-card.open')).map(el=>el.id);
 
   let totalSpots=0,filledSpots=0;
   WEEKLY_TEMPLATE.forEach((_,ci)=>{
@@ -633,7 +660,7 @@ function renderWeek(wkKey){
   WEEKLY_TEMPLATE.forEach((cls,ci)=>{
     const s=getSignups(wkKey,ci);
     const sh=cls.spots.map((spot,si)=>{
-      const entries=s[si]&&s[si].length?s[si].map(p=>`${p.fullName||p.name} <span style="color:#555;font-size:0.68rem">(${p.email})</span>`).join(', '):'—';
+      const entries=s[si]&&s[si].length?s[si].map(p=>`${escHtml(p.fullName||p.name)} <span style="color:#555;font-size:0.68rem">(${escHtml(p.email)})</span>`).join(', '):'—';
       return`<div class="admin-spots">${spot.label}: ${entries}</div>`;
     }).join('');
     adminHtml+=`<div class="admin-class-row"><strong>${cls.day} ${cls.time} · ${cls.name}</strong>${sh}</div>`;
@@ -674,6 +701,7 @@ function renderWeek(wkKey){
     schedHtml+='</div>';
   });
   panel.querySelector('.schedule-area').innerHTML=schedHtml;
+  openCards.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('open');});
 }
 
 function toggleCard(id){document.getElementById('card-'+id).classList.toggle('open');}
@@ -699,7 +727,8 @@ function renderArchive(){
   if(sorted.length>0){
     html+=`<div class="hours-section"><div class="hours-title">📊 Leadership Participation — All Time</div><div class="hours-grid">`;
     sorted.forEach(([name,data])=>{
-      html+=`<div class="hours-card"><div class="h-count">${data.classes}</div><div class="h-name">${name}</div><div class="h-stats">${data.level} · ${data.classes} class${data.classes!==1?'es':''}</div><div class="h-email">${data.email}</div></div>`;
+      const emailLine=isAdmin?`<div class="h-email">${escHtml(data.email)}</div>`:'';
+      html+=`<div class="hours-card"><div class="h-count">${data.classes}</div><div class="h-name">${escHtml(name)}</div><div class="h-stats">${escHtml(data.level)} · ${data.classes} class${data.classes!==1?'es':''}</div>${emailLine}</div>`;
     });
     html+=`</div></div>`;
   }
@@ -714,10 +743,10 @@ function renderArchive(){
         cls.spots.forEach((spot,si)=>{(cs[si]||[]).forEach(p=>{rows.push({day:cls.day,time:cls.time,className:cls.name,role:spot.label,name:p.fullName||p.name||'',level:p.level,email:p.email||''});});});
       });
       if(rows.length===0){
-        html+=`<table class="archive-table"><tr class="no-signups"><td colspan="6">No signups recorded</td></tr></table>`;
+        html+=`<table class="archive-table"><tr class="no-signups"><td colspan="${isAdmin?6:5}">No signups recorded</td></tr></table>`;
       } else {
-        html+=`<table class="archive-table"><thead><tr><th>Name</th><th>Level</th><th>Day</th><th>Class</th><th>Role</th><th>Email</th></tr></thead><tbody>`;
-        rows.forEach(r=>{html+=`<tr><td>${r.name}</td><td>${r.level}</td><td>${r.day}</td><td>${r.className} · ${r.time}</td><td>${r.role}</td><td class="email-cell">${r.email}</td></tr>`;});
+        html+=`<table class="archive-table"><thead><tr><th>Name</th><th>Level</th><th>Day</th><th>Class</th><th>Role</th>${isAdmin?'<th>Email</th>':''}</tr></thead><tbody>`;
+        rows.forEach(r=>{html+=`<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.level)}</td><td>${r.day}</td><td>${r.className} · ${r.time}</td><td>${r.role}</td>${isAdmin?`<td class="email-cell">${escHtml(r.email)}</td>`:''}</tr>`;});
         html+=`</tbody></table>`;
       }
       html+=`</div>`;
@@ -772,13 +801,13 @@ document.getElementById('exportBtn').onclick=()=>{
   ACTIVE_WEEKS.forEach(wk=>{
     WEEKLY_TEMPLATE.forEach((cls,ci)=>{
       const s=getSignups(wk.key,ci);
-      cls.spots.forEach((spot,si)=>{(s[si]||[]).forEach(p=>{csv+=`"${wk.label}","${cls.day}","${cls.time}","${cls.name}","${spot.label}","${p.firstName||''}","${p.lastName||''}","${p.email||''}","${p.level||''}"\n`;});});
+      cls.spots.forEach((spot,si)=>{(s[si]||[]).forEach(p=>{csv+=[wk.label,cls.day,cls.time,cls.name,spot.label,p.firstName||'',p.lastName||'',p.email||'',p.level||''].map(csvCell).join(',')+'\n';});});
     });
   });
   store.archivedWeeks.forEach(aw=>{
     WEEKLY_TEMPLATE.forEach((cls,ci)=>{
       const cs=aw.signups&&aw.signups[ci];if(!cs)return;
-      cls.spots.forEach((spot,si)=>{(cs[si]||[]).forEach(p=>{csv+=`"${aw.label} (archived)","${cls.day}","${cls.time}","${cls.name}","${spot.label}","${p.firstName||p.name||''}","${p.lastName||''}","${p.email||''}","${p.level||''}"\n`;});});
+      cls.spots.forEach((spot,si)=>{(cs[si]||[]).forEach(p=>{csv+=[aw.label+' (archived)',cls.day,cls.time,cls.name,spot.label,p.firstName||p.name||'',p.lastName||'',p.email||'',p.level||''].map(csvCell).join(',')+'\n';});});
     });
   });
   const blob=new Blob([csv],{type:'text/csv'});
@@ -790,6 +819,10 @@ document.getElementById('exportBtn').onclick=()=>{
 
 // ─── INIT ────────────────────────────────────────────────────
 async function init(){
+  // Guard: every login path funnels here; running twice would duplicate the
+  // tab strip, the week panels and the sync poll.
+  if(init._started) return;
+  init._started=true;
   buildUI();
   document.getElementById('loadingOverlay').classList.remove('hidden');
   store = await loadFromCloud();
@@ -886,7 +919,6 @@ async function doLeadLogin(){
   currentUser = user;
   await loadUserProfile();
   showLeadApp();
-  init();
 }
 
 document.addEventListener('keydown', e => {
@@ -902,6 +934,7 @@ async function loadUserProfile(){
   if(currentRole === 'admin' || currentRole === 'instructor'){
     isAdmin = true;
   }
+  syncAdminUI();
 }
 
 function handleAuthBtn(){
@@ -954,6 +987,7 @@ async function doAuthSignin(){
   currentUser = user;
   closeAuthModal();
   await loadUserProfile();
+  showLeadApp();
 }
 
 async function doAuthSignup(){
@@ -967,7 +1001,11 @@ async function doAuthSignup(){
   if(error){ err.textContent = error; err.style.display='block'; return; }
   currentUser = user;
   closeAuthModal();
-  await loadUserProfile();
+  // A session means the account is live — go straight in rather than
+  // dropping them back on the login screen they just came from.
+  const session = await BTKD.getSession();
+  if(session){ await loadUserProfile(); showLeadApp(); }
+  else { showToast('Account created — check your email to confirm, then sign in.','success'); }
 }
 
 async function showUserMenu(){
