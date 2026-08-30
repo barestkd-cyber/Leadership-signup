@@ -184,7 +184,7 @@
     <button onclick="kioskDoLogin()" style="width:100%;background:var(--gold);color:#0c0e13;border:none;border-radius:10px;padding:13px;font-weight:700;font-size:1rem;cursor:pointer;font-family:inherit;">Sign in</button>
   </div>
 </div>
-<div style="position:fixed;bottom:6px;right:8px;font-size:.6rem;color:var(--faint);z-index:60;pointer-events:none;">build 4 · live</div>
+<div style="position:fixed;bottom:6px;right:8px;font-size:.6rem;color:var(--faint);z-index:60;pointer-events:none;">build 5 · live</div>
 
 <script>
 /* Live kiosk: scans resolve real students (the contacts ids inside the
@@ -194,9 +194,26 @@
    into the leadership app on this device also unlocks the kiosk. */
 const sb = BTKD.sb;
 
-// Identical to the CRM/curriculum mapping: which enrollment programs a
-// schedule slot admits. Do not let these three copies drift.
+// Which enrollment roster(s) a schedule row admits — mirrors the CRM's
+// attProgramsFor exactly (ECOSYSTEM §16.6g): schedule_template.program +
+// divisions are the source of truth; the old colour-plus-label inference
+// below is only the fallback for rows the columns have not reached.
+// Do not let this and the CRM's copy drift.
 const CHECKIN_GATE={'prog-cubs':'Cubs','prog-juniors':'Juniors','prog-teen':'Teens/Adults','prog-forms':['Juniors','Teens/Adults'],'prog-sparring':['Juniors','Teens/Adults'],'prog-kick':'Kickboxing','prog-ampd':"AMP'D",'prog-leader':'Leadership'};
+function programsFor(r){
+  if(r && r.program){
+    if(r.program==='Taekwondo'){
+      const d=(r.divisions||[]).filter(x=>x==='Juniors'||x==='Teens/Adults');
+      if(d.length) return d;
+      // a Taekwondo row with no divisions is half-authored — fall through
+    } else {
+      return [r.program]; // enrollment keys are the program names, on purpose
+    }
+  }
+  if(r && r.prog_css==='prog-kick') return [/(jiu|bjj)/i.test(String(r.label||''))?'Jiu Jitsu':'Kickboxing'];
+  const g=CHECKIN_GATE[r&&r.prog_css]||'TKD';
+  return Array.isArray(g)?g:[g];
+}
 const POP_COL={'prog-cubs':'--b-white','prog-juniors':'--b-green','prog-teen':'--b-blue','prog-forms':'--b-red','prog-sparring':'--b-red','prog-kick':'--b-orange','prog-ampd':'--gold','prog-leader':'--gold'};
 const DAYS=['MON','TUE','WED','THU','FRI','SAT'];
 
@@ -206,13 +223,14 @@ let scanPaused=false, lastCode='', lastAt=0;
 function ymd(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function todayIdx(){ return (new Date().getDay()+6)%7; } // 0=Mon … 6=Sun
 function labelOf(r){ return (r.label||'Class')+(r.belt?(' · '+r.belt):'')+(r.time?('  '+DAYS[r.day]+' '+r.time):''); }
-function gateOf(r){ const g=CHECKIN_GATE[r.prog_css]||'Juniors'; return Array.isArray(g)?g[0]:g; }
+function gateOf(r){ return programsFor(r)[0]; } // attendance.program is text — store the first, same as the CRM
+function escHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 async function loadData(){
   const [st,en,sc,at]=await Promise.all([
     sb.from('students').select('id,name'),
     sb.from('enrollments').select('student_id,program').eq('status','active'),
-    sb.from('schedule_template').select('day,time,time_h,time_m,label,belt,prog_css'),
+    sb.from('schedule_template').select('day,time,time_h,time_m,label,belt,prog_css,program,divisions'),
     sb.from('attendance').select('student_id,class_label').eq('class_date', ymd())
   ]);
   if(st.error||en.error||sc.error||at.error){
@@ -230,11 +248,8 @@ async function loadData(){
 
 function todaysFor(s){
   const progs=ENR.filter(e=>e.student_id===s.id).map(e=>e.program);
-  return SCHED.filter(r=>r.day===todayIdx()).filter(r=>{
-    const g=CHECKIN_GATE[r.prog_css]||'Juniors';
-    const list=Array.isArray(g)?g:[g];
-    return list.some(p=>progs.indexOf(p)!==-1);
-  }).sort((a,b)=>((a.time_h||0)*60+(a.time_m||0))-((b.time_h||0)*60+(b.time_m||0)));
+  return SCHED.filter(r=>r.day===todayIdx()).filter(r=>programsFor(r).some(p=>progs.indexOf(p)!==-1))
+    .sort((a,b)=>((a.time_h||0)*60+(a.time_m||0))-((b.time_h||0)*60+(b.time_m||0)));
 }
 function findStudent(code){
   code=(code||'').trim();
@@ -289,7 +304,7 @@ function showPop(student, opts){
   scanPaused=true;
   document.getElementById('popName').textContent=student.name;
   document.getElementById('popOpts').innerHTML=opts.map((o,i)=>
-    `<button class="opt" style="--bcol:var(${POP_COL[o.prog_css]||'--gold'})" onclick="pickPop('${student.id}',${i})">${(o.label||'Class')+(o.belt?(' · '+o.belt):'')}<small>${o.time||''}</small></button>`).join('');
+    `<button class="opt" style="--bcol:var(${POP_COL[o.prog_css]||'--gold'})" onclick="pickPop('${student.id}',${i})">${escHtml((o.label||'Class')+(o.belt?(' · '+o.belt):''))}<small>${escHtml(o.time||'')}</small></button>`).join('');
   document.getElementById('popOv').classList.add('show');
 }
 function pickPop(sid, idx){
@@ -307,7 +322,7 @@ function renderSearch(){
   const box=document.getElementById('results');
   if(!q){ box.innerHTML=''; return; }
   box.innerHTML=ROSTER.filter(s=>(s.name||'').toLowerCase().includes(q)).slice(0,8)
-    .map(s=>`<button class="pick" onclick="pickName('${s.id}')">${s.name}</button>`).join('');
+    .map(s=>`<button class="pick" onclick="pickName('${s.id}')">${escHtml(s.name)}</button>`).join('');
 }
 function pickName(id){
   document.getElementById('search').value=''; document.getElementById('results').innerHTML='';
@@ -344,7 +359,7 @@ function tick(){
 // ---- test QR codes (real roster ids) ----
 function openTest(){
   const grid=document.getElementById('qrgrid');
-  grid.innerHTML=ROSTER.slice(0,10).map(s=>`<div class="qrcard"><canvas id="qr_${s.id}"></canvas><div class="qn">${s.name}</div><div class="qt">${todaysFor(s).length} class(es) today</div></div>`).join('');
+  grid.innerHTML=ROSTER.slice(0,10).map(s=>`<div class="qrcard"><canvas id="qr_${s.id}"></canvas><div class="qn">${escHtml(s.name)}</div><div class="qt">${todaysFor(s).length} class(es) today</div></div>`).join('');
   if(typeof QRious!=='undefined'){ ROSTER.slice(0,10).forEach(s=>{ new QRious({element:document.getElementById('qr_'+s.id),value:String(s.id),size:200,level:'M'}); }); }
   document.getElementById('testPanel').classList.add('show');
 }
