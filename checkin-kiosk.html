@@ -366,20 +366,40 @@ function startCam(){
     .catch(()=>camFail());
 }
 function camFail(){ document.getElementById('camerr').classList.add('show'); document.getElementById('camhint').style.display='none'; }
-function tick(){
-  if(!scanPaused && video.readyState===video.HAVE_ENOUGH_DATA && typeof jsQR!=='undefined'){
-    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
-    ctx.drawImage(video,0,0,canvas.width,canvas.height);
-    try{
-      const img=ctx.getImageData(0,0,canvas.width,canvas.height);
-      const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'dontInvert'});
-      if(code && code.data){
-        const now=Date.now();
-        if(code.data!==lastCode || now-lastAt>2500){ lastCode=code.data; lastAt=now; resolve(findStudent(code.data), code.data); }
-      }
-    }catch(e){}
-  }
+/* How hard the scanner works. Eight looks a second at 480px wide is plenty
+ * for a QR code somebody is holding up - it is roughly what a phone camera
+ * app does - and it is about 3% of the work this loop used to do at 60fps
+ * and full sensor resolution. That difference is a tablet that stays cool on
+ * the charger instead of flattening its own battery (owner, 2026-09-08). */
+const SCAN_FPS = 8;
+const SCAN_WIDTH = 480;
+let lastScanAt = 0;
+
+function tick(ts){
   requestAnimationFrame(tick);
+  // Nothing to look at while the screen is off or the kiosk is in the
+  // background, and no reason to hold the CPU awake for it.
+  if(document.hidden || scanPaused) return;
+  if(ts - lastScanAt < 1000/SCAN_FPS) return;
+  lastScanAt = ts;
+  if(video.readyState!==video.HAVE_ENOUGH_DATA || typeof jsQR==='undefined') return;
+
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if(!vw || !vh) return;
+  const w = Math.min(SCAN_WIDTH, vw);
+  const h = Math.max(1, Math.round(vh * (w/vw)));
+  // Assigning to canvas.width WIPES and reallocates the buffer, so only do
+  // it when the size actually changes rather than on every single frame.
+  if(canvas.width!==w || canvas.height!==h){ canvas.width=w; canvas.height=h; }
+  ctx.drawImage(video,0,0,w,h);
+  try{
+    const img=ctx.getImageData(0,0,w,h);
+    const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'dontInvert'});
+    if(code && code.data){
+      const now=Date.now();
+      if(code.data!==lastCode || now-lastAt>2500){ lastCode=code.data; lastAt=now; resolve(findStudent(code.data), code.data); }
+    }
+  }catch(e){}
 }
 
 // ---- test QR codes (real roster ids) ----
