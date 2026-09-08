@@ -220,8 +220,18 @@ const DAYS=['MON','TUE','WED','THU','FRI','SAT'];
 let ROSTER=[], ENR=[], SCHED=[], ATT=new Set(), DATA_OK=false, CAM_ON=false;
 let scanPaused=false, lastCode='', lastAt=0;
 
-function ymd(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-function todayIdx(){ return (new Date().getDay()+6)%7; } // 0=Mon … 6=Sun
+/* The studio's clock, not the tablet's. A kiosk in the lobby set to the
+ * wrong timezone showed an hour it was not (owner, 2026-09-08) - and worse,
+ * would have rolled to tomorrow while an evening class was still on the mat,
+ * filing those check-ins under the wrong date. Everything below reads
+ * America/Chicago explicitly, whatever the device thinks. */
+const TZ = 'America/Chicago';
+/* en-CA gives yyyy-mm-dd, which is the shape the database wants. */
+function ymd(){ return new Date().toLocaleDateString('en-CA', { timeZone: TZ }); }
+function todayIdx(){
+  const day = new Date().toLocaleDateString('en-US', { timeZone: TZ, weekday: 'short' });
+  return ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].indexOf(day);   // 0=Mon … 6=Sun
+}
 function labelOf(r){ return (r.label||'Class')+(r.belt?(' · '+r.belt):'')+(r.time?('  '+DAYS[r.day]+' '+r.time):''); }
 function gateOf(r){ return programsFor(r)[0]; } // attendance.program is text — store the first, same as the CRM
 function escHtml(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
@@ -381,7 +391,7 @@ function beep(err){
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show');
   clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
 
-function clock(){ document.getElementById('clock').textContent=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+function clock(){ document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-US', { timeZone: TZ, hour:'numeric', minute:'2-digit' }); }
 
 // ---- auth gate + boot ----
 async function kioskDoLogin(){
