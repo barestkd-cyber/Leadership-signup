@@ -352,7 +352,11 @@
 <script>
 // ─── CONFIG ──────────────────────────────────────────────────
 // Set your admin password here
-const ADMIN_PASSWORD = 'sensei2024';
+// The admin password that used to live here was readable by anyone: this
+// file is served publicly and is in a public repo. It is gone. Staff are
+// identified by their signed-in account (profiles.role, checked on the
+// SERVER by is_staff()), and the emails it used to hide are simply never
+// sent to an account that has not earned them.
 
 const INSTRUCTOR_RANKS   = ["Instructor's Aid","Instructor Trainee","Assistant Instructor","Lead Instructor","Senior Lead Instructor"];
 const LEADERSHIP_LEVELS  = ["Leadership Level 1","Leadership Level 2","Leadership Level 3","Leadership Level 4","Leadership Level 5","Leadership Level 6","Leadership Level 7"];
@@ -407,31 +411,39 @@ const ACTIVE_WEEKS=Array.from({length:4},(_,i)=>{
 // keep working through the one canonical, shared session.
 const STORE_KEY = 'martial_arts_roster_v1';
 const sb = BTKD.sb;
+const FN_BASE = 'https://akdncbzxiwvihfcyijvm.supabase.co/functions/v1';
+
+// Every read and write goes through the server, which decides what this
+// caller may see and do (audit A11). The page no longer touches the roster
+// table: emails never reach a browser that has not earned them, and a
+// signup can only be removed by somebody the SERVER agrees is staff.
+async function rosterCall(action, payload) {
+  const { data: sess } = await sb.auth.getSession();
+  const token = sess?.session?.access_token;
+  if (!token) throw new Error('Please sign in again.');
+  const res = await fetch(FN_BASE + '/leadership-roster', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify(Object.assign({ action }, payload || {})),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || 'That did not go through.');
+  return body;
+}
 
 async function loadFromCloud() {
   try {
     setSyncStatus('syncing','Syncing...');
-    const { data: rows, error } = await sb.from('roster').select('value').eq('key', STORE_KEY);
-    if (error) throw new Error('Load failed');
+    const body = await rosterCall('read');
+    // What came back is what this account is allowed to see, so it is also
+    // what may be cached. isAdmin follows the SERVER, not a password.
+    isAdmin = body.staff === true;
+    saveLocal(body.store);
     setSyncStatus('synced','Synced ✓');
-    if (rows && rows.length > 0) return JSON.parse(rows[0].value);
-    return { signups:{}, archivedWeeks:[] };
+    return body.store || { signups:{}, archivedWeeks:[] };
   } catch(e) {
-    setSyncStatus('error','Offline — changes saved locally');
+    setSyncStatus('error','Offline — showing the last copy');
     return getLocalStore();
-  }
-}
-
-async function saveToCloud(store) {
-  saveLocal(store);
-  try {
-    setSyncStatus('syncing','Saving...');
-    const { error } = await sb.from('roster').upsert({ key: STORE_KEY, value: JSON.stringify(store), updated_at: new Date().toISOString() }, { onConflict: 'key' });
-    if (error) throw new Error('Save failed');
-    setSyncStatus('synced','Saved ✓');
-  } catch(e) {
-    setSyncStatus('error','Save failed — retrying...');
-    setTimeout(()=>saveToCloud(store), 3000);
   }
 }
 
@@ -499,9 +511,10 @@ function syncAdminUI(){
   if(ex) ex.style.display=isAdmin?'':'none';
 }
 
+// Kept so the markup that calls it still resolves, but a typed password is
+// no longer a way in - only a staff account is.
 function tryAdminLogin() {
-  const pw = document.getElementById('adminPassInput').value;
-  if (pw === ADMIN_PASSWORD) {
+  if (isAdmin) {
     isAdmin=true;
     document.getElementById('adminLoginModal').classList.remove('active');
     document.getElementById('adminToggle').classList.add('active');
@@ -572,11 +585,18 @@ document.getElementById('modalConfirm').onclick=async()=>{
   btn.disabled=true; btn.textContent='Saving...';
 
   const{wkKey,ci,si}=pendingSignup;
-  const s=getSignups(wkKey,ci);
-  if(s[si].length<WEEKLY_TEMPLATE[ci].spots[si].count){
-    s[si].push({firstName:first,lastName:last,fullName:`${first} ${last}`,email,level});
-    await saveToCloud(store);
-    // Show confirmation popup
+  try {
+    // The server owns the roster. It re-checks the spot exists and still
+    // has room, so two people claiming the last place at once cannot both
+    // be told yes - which the old whole-blob upsert allowed.
+    const body = await rosterCall('claim', {
+      week_key: wkKey, class_index: ci, spot_index: si,
+      first_name: first, last_name: last, email, level,
+    });
+    store = body.store;
+    isAdmin = body.staff === true;
+    saveLocal(store);
+    setSyncStatus('synced','Saved ✓');
     const cls=WEEKLY_TEMPLATE[ci], spot=cls.spots[si];
     const wk=ACTIVE_WEEKS.find(w=>w.key===wkKey);
     document.getElementById('confirmDetails').innerHTML=
@@ -585,6 +605,10 @@ document.getElementById('modalConfirm').onclick=async()=>{
        <span style="color:var(--gold)">${spot.label}</span><br>
        Week of ${wk.label}`;
     document.getElementById('confirmOverlay').classList.add('active');
+  } catch (e) {
+    // A spot that could not be saved must NOT look claimed.
+    setSyncStatus('error','Not saved');
+    showToast(e.message || 'That spot could not be claimed.', 'error');
   }
   btn.disabled=false; btn.textContent='Claim Spot →';
   closeModal();
@@ -629,9 +653,16 @@ function renderSlots(wkKey,ci,si){
 }
 
 async function removeSignup(wkKey,ci,si,idx){
-  getSignups(wkKey,ci)[si].splice(idx,1);
-  await saveToCloud(store);
-  showToast('Signup removed');
+  try {
+    const body = await rosterCall('remove', {
+      week_key: wkKey, class_index: ci, spot_index: si, index: idx,
+    });
+    store = body.store;
+    saveLocal(store);
+    showToast('Signup removed');
+  } catch (e) {
+    showToast(e.message || 'That could not be removed.', 'error');
+  }
   renderWeek(wkKey);
 }
 
