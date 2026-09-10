@@ -447,8 +447,14 @@ async function loadFromCloud() {
   }
 }
 
-// Local fallback
-const LOCAL_KEY = 'classRoster_local_v4';
+// Local fallback. v5 because the v4 cache was written by the page that held
+// the WHOLE roster - every signup email - on every signed-in device,
+// students' phones included (audit A11). This cache now only ever holds what
+// the server returned to THIS account, so a student's copy has no emails in
+// it, and it is written only after the server confirms, so it can never show
+// a spot as reserved that the server did not accept (audit A10).
+const LOCAL_KEY = 'classRoster_local_v5';
+try { localStorage.removeItem('classRoster_local_v4'); } catch (e) {}
 function getLocalStore(){
   try{const s=localStorage.getItem(LOCAL_KEY);return s?JSON.parse(s):{signups:{},archivedWeeks:[]};}catch(e){return{signups:{},archivedWeeks:[]};}
 }
