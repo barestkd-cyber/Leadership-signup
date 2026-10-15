@@ -485,10 +485,20 @@ function archiveOldWeeks() {
   store.archivedWeeks.sort((a,b)=>parseKeyLocal(b.key)-parseKeyLocal(a.key));
 }
 
+/* A class's signups are a list of spot lists. The roster service once saved
+   a class whose first signup took its second spot as {"1":[...]}, and the
+   counts below broke on it, so a whole week drew nothing (2026-10-15).
+   Either shape reads as a list here, so one bad entry cannot blank a week. */
+function spotLists(cs,n){
+  const out=[];
+  if(Array.isArray(cs)) cs.forEach((v,i)=>{out[i]=Array.isArray(v)?v:[];});
+  else if(cs&&typeof cs==='object') Object.keys(cs).forEach(k=>{const i=Number(k);if(Number.isInteger(i)&&i>=0)out[i]=Array.isArray(cs[k])?cs[k]:[];});
+  for(let i=0;i<Math.max(n||0,out.length);i++) if(!Array.isArray(out[i])) out[i]=[];
+  return out;
+}
 function getSignups(wk,ci){
   if(!store.signups[wk])store.signups[wk]={};
-  if(!store.signups[wk][ci])store.signups[wk][ci]=WEEKLY_TEMPLATE[ci].spots.map(()=>[]);
-  while(store.signups[wk][ci].length<WEEKLY_TEMPLATE[ci].spots.length)store.signups[wk][ci].push([]);
+  store.signups[wk][ci]=spotLists(store.signups[wk][ci],WEEKLY_TEMPLATE[ci].spots.length);
   return store.signups[wk][ci];
 }
 
@@ -753,7 +763,7 @@ function renderArchive(){
     if(!aw.signups) return;
     Object.values(aw.signups).forEach(cs=>{
       if(!cs) return;
-      cs.forEach(sa=>{if(!sa)return;sa.forEach(p=>{
+      spotLists(cs).forEach(sa=>{sa.forEach(p=>{
         const name=p.fullName||p.name||'';
         if(!hoursMap[name])hoursMap[name]={classes:0,level:p.level,email:p.email||''};
         hoursMap[name].classes++;
